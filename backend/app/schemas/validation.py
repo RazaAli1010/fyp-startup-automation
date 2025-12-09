@@ -51,5 +51,28 @@ class RedditSentimentResponse(BaseModel):
     key_praises: list[str]
     sample_posts: list[SamplePost]
 
+class TrendsDataResponse(BaseModel):
+    """Google Trends analysis results."""
+    trend_direction: str = Field(
+        ...,
+        description="Trend direction: rising, falling, stable, or no_data"
+    )
+    interest_score: int = Field(
+        ..., 
+        ge=0, 
+        le=100,
+        description="Google's relative interest score (0-100)"
+    )
+    related_queries: list[str]
+    related_topics: list[str]
+    geographic_interest: dict[str, int] = Field(
+        ...,
+        description="Interest by region with scores"
+    )
+    temporal_trend: str = Field(
+        ...,
+        description="Long-term trend: growing, declining, stable, or seasonal"
+    )
+
 
 
