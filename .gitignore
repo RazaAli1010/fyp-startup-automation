@@ -1,13 +1,4 @@
-# =============================================================================
-# Startup AI Validator - Monorepo .gitignore
-# =============================================================================
-# This file covers Python (FastAPI), Node.js (Next.js), and general dev tooling.
-
-# =============================================================================
-# SECURITY - Environment Files (NEVER commit secrets!)
-# =============================================================================
 .env
-backend/.env
 .env.local
 .env.development
 .env.development.local
