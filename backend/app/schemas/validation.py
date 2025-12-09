@@ -74,5 +74,25 @@ class TrendsDataResponse(BaseModel):
         description="Long-term trend: growing, declining, stable, or seasonal"
     )
 
+class CompetitorInfo(BaseModel):
+    """Information about a single competitor."""
+    name: str
+    url: str
+    description: str
+    funding: str
+
+
+class CompetitorAnalysisResponse(BaseModel):
+    """Competitor analysis results."""
+    competitors_found: int = Field(..., ge=0)
+    direct_competitors: list[CompetitorInfo]
+    indirect_competitors: list[CompetitorInfo]
+    market_saturation: str = Field(
+        ...,
+        description="Market saturation level: low, medium, high, or oversaturated"
+    )
+    differentiation_opportunities: list[str]
+    total_funding_in_space: str
+
 
 
