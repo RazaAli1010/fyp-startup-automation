@@ -33,5 +33,23 @@ class SamplePost(BaseModel):
     sentiment: str
     subreddit: str
 
+class RedditSentimentResponse(BaseModel):
+    """Reddit sentiment analysis results."""
+    overall_sentiment: str = Field(
+        ..., 
+        description="Overall sentiment: positive, negative, neutral, or mixed"
+    )
+    sentiment_score: float = Field(
+        ..., 
+        ge=-1.0, 
+        le=1.0,
+        description="Sentiment score from -1 (negative) to 1 (positive)"
+    )
+    total_posts_analyzed: int = Field(..., ge=0)
+    top_subreddits: list[str]
+    key_concerns: list[str]
+    key_praises: list[str]
+    sample_posts: list[SamplePost]
+
 
 
