@@ -26,4 +26,12 @@ class ValidationRequest(BaseModel):
             }
         }
 
+class SamplePost(BaseModel):
+    """A sample Reddit post from the analysis."""
+    title: str
+    score: int
+    sentiment: str
+    subreddit: str
+
+
 
