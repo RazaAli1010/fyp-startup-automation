@@ -94,5 +94,29 @@ class CompetitorAnalysisResponse(BaseModel):
     differentiation_opportunities: list[str]
     total_funding_in_space: str
 
+class FinalVerdictResponse(BaseModel):
+    """Final synthesized verdict with scoring."""
+    overall_score: int = Field(
+        ..., 
+        ge=0, 
+        le=100,
+        description="Overall validation score (0-100)"
+    )
+    recommendation: str = Field(
+        ...,
+        description="Recommendation: strong_go, go, caution, pivot, or no_go"
+    )
+    confidence: float = Field(
+        ..., 
+        ge=0.0, 
+        le=1.0,
+        description="Confidence in the verdict (0-1)"
+    )
+    summary: str = Field(..., description="Human-readable summary")
+    strengths: list[str]
+    weaknesses: list[str]
+    action_items: list[str]
+    risk_factors: list[str]
+
 
 
