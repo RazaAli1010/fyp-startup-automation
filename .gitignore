@@ -7,6 +7,7 @@
 # SECURITY - Environment Files (NEVER commit secrets!)
 # =============================================================================
 .env
+backend/.env
 .env.local
 .env.development
 .env.development.local
