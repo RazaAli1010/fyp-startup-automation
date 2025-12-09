@@ -1,0 +1,16 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+langgraph==0.2.53
+langchain-openai==0.2.10
+langchain-core==0.3.21
+openai==1.55.0
+pydantic==2.10.2
+pydantic-settings==2.6.1
+httpx==0.28.0
+exa-py==1.0.9
+tavily-python==0.5.0
+pytrends==4.9.2
+pandas==2.1.4
+requests==2.32.3
+python-dotenv==1.0.1
+asyncio-throttle==1.0.2
