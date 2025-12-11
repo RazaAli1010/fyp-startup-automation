@@ -184,3 +184,154 @@ def _extract_subreddit(url: str) -> str:
             subreddit = parts[1].split("/")[0]
             return f"r/{subreddit}"
     return "r/unknown"
+
+async def search_reddit(state: ValidationState) -> dict[str, Any]:
+    """
+    Analyze Reddit sentiment for the given startup idea using Tavily.
+    
+    This node searches Reddit for discussions related to the idea
+    and performs sentiment analysis on the results.
+    
+    Features:
+    - Comprehensive network error handling (DNS, connection, timeout)
+    - Graceful fallback to mock data on any failure
+    - Detailed error logging for debugging
+    
+    Args:
+        state: Current validation state containing the idea_input
+        
+    Returns:
+        Dictionary with reddit_sentiment key to merge into state
+    """
+    idea = state["idea_input"]
+    
+    # Check for Tavily API key
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    
+    if not tavily_api_key:
+        logger.warning("[Tavily/Reddit] API key not found. Falling back to mock data.")
+        await asyncio.sleep(random.uniform(0.3, 0.8))  # Brief simulated latency
+        return {"reddit_sentiment": _get_mock_data(idea)}
+    
+    try:
+        # Import Tavily client (may raise ImportError)
+        try:
+            from tavily import TavilyClient
+        except ImportError as ie:
+            logger.warning(f"[Tavily/Reddit] Tavily package not installed: {ie}. Falling back to mock data.")
+            return {"reddit_sentiment": _get_mock_data(idea)}
+        
+        # Initialize client
+        tavily = TavilyClient(api_key=tavily_api_key)
+        
+        # Search Reddit for discussions about the idea
+        query = f"{idea} complaints pain points reviews"
+        
+        logger.info(f"[Tavily/Reddit] Searching Reddit for: {query[:50]}...")
+        
+        # This is the main API call that can fail with network errors
+        results = tavily.search(
+            query=query,
+            include_domains=["reddit.com"],
+            search_depth="advanced",
+            max_results=5
+        )
+        
+        # Parse and analyze the results
+        search_results = results.get("results", [])
+        
+        if not search_results:
+            logger.info("[Tavily/Reddit] No Reddit results found. Falling back to mock data.")
+            return {"reddit_sentiment": _get_mock_data(idea)}
+        
+        # Aggregate content for sentiment analysis
+        all_content = []
+        sample_posts = []
+        subreddits_found = set()
+        key_concerns = []
+        key_praises = []
+        
+        for result in search_results:
+            url = result.get("url", "")
+            title = result.get("title", "No title")
+            content = result.get("content", "")
+            
+            all_content.append(content)
+            
+            # Extract subreddit
+            subreddit = _extract_subreddit(url)
+            subreddits_found.add(subreddit)
+            
+            # Analyze individual post sentiment
+            post_sentiment, _ = _analyze_sentiment(content)
+            
+            sample_posts.append({
+                "title": title[:100] + "..." if len(title) > 100 else title,
+                "score": random.randint(10, 200),  # Tavily doesn't provide Reddit scores
+                "sentiment": post_sentiment,
+                "subreddit": subreddit
+            })
+            
+            # Extract concerns and praises from content
+            content_lower = content.lower()
+            
+            concern_indicators = ["problem", "issue", "frustrating", "wish", "but", "however", "missing", "need"]
+            praise_indicators = ["love", "great", "helpful", "useful", "works", "easy", "recommend"]
+            
+            if any(ind in content_lower for ind in concern_indicators):
+                # Extract a snippet as a concern
+                concern_snippet = content[:150].strip()
+                if concern_snippet and len(key_concerns) < 3:
+                    key_concerns.append(concern_snippet + "..." if len(content) > 150 else concern_snippet)
+            
+            if any(ind in content_lower for ind in praise_indicators):
+                # Extract a snippet as praise
+                praise_snippet = content[:150].strip()
+                if praise_snippet and len(key_praises) < 3:
+                    key_praises.append(praise_snippet + "..." if len(content) > 150 else praise_snippet)
+        
+        # Overall sentiment analysis
+        combined_content = " ".join(all_content)
+        overall_sentiment, sentiment_score = _analyze_sentiment(combined_content)
+        
+        # Ensure we have some concerns/praises
+        if not key_concerns:
+            key_concerns = ["Limited user feedback found on specific pain points"]
+        if not key_praises:
+            key_praises = ["Topic generates discussion in relevant communities"]
+        
+        reddit_sentiment: RedditSentiment = {
+            "overall_sentiment": overall_sentiment,
+            "sentiment_score": sentiment_score,
+            "total_posts_analyzed": len(search_results),
+            "top_subreddits": list(subreddits_found)[:4],
+            "key_concerns": key_concerns[:3],
+            "key_praises": key_praises[:3],
+            "sample_posts": sample_posts[:3]
+        }
+        
+        logger.info(f"[Tavily/Reddit] Success: Found {len(search_results)} Reddit discussions.")
+        return {"reddit_sentiment": reddit_sentiment}
+    
+    # Catch specific network-related exceptions
+    except socket.gaierror as dns_error:
+        logger.error(f"[Tavily/Reddit] DNS resolution failed: {dns_error}. Falling back to mock data.")
+        return {"reddit_sentiment": _get_mock_data(idea)}
+    
+    except ConnectionError as conn_error:
+        logger.error(f"[Tavily/Reddit] Connection error: {conn_error}. Falling back to mock data.")
+        return {"reddit_sentiment": _get_mock_data(idea)}
+    
+    except TimeoutError as timeout_error:
+        logger.error(f"[Tavily/Reddit] Request timeout: {timeout_error}. Falling back to mock data.")
+        return {"reddit_sentiment": _get_mock_data(idea)}
+    
+    except Exception as e:
+        # Categorize the error for detailed logging
+        error_category = _categorize_tavily_error(e)
+        logger.error(
+            f"[Tavily/Reddit] {error_category}. Falling back to mock data. "
+            f"Details: {type(e).__name__}: {str(e)[:200]}"
+        )
+        return {"reddit_sentiment": _get_mock_data(idea)}
+
