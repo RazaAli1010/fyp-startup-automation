@@ -197,3 +197,24 @@ def _analyze_interest_over_time(timeline_data: list) -> tuple[str, int, str]:
             temporal_trend = "stable"
     
     return trend_direction, int(interest_score), temporal_trend
+
+
+
+
+def _extract_related_topics(data: dict) -> list[str]:
+    """Extract related topics from SerpApi response."""
+    topics = []
+    
+    rising = data.get("rising_topics", [])
+    for item in rising[:4]:
+        if "topic" in item and "title" in item["topic"]:
+            topics.append(item["topic"]["title"])
+    
+    top = data.get("top_topics", [])
+    for item in top[:4]:
+        if "topic" in item and "title" in item["topic"]:
+            title = item["topic"]["title"]
+            if title not in topics:
+                topics.append(title)
+    
+    return topics[:4]
