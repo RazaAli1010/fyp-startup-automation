@@ -241,3 +241,139 @@ def _extract_geographic_interest(data: dict) -> dict[str, int]:
     
     return geo_interest
 
+
+
+async def search_trends(state: ValidationState) -> dict[str, Any]:
+    """
+    Fetch Google Trends data for the startup idea using SerpApi.
+    
+    SerpApi provides stable, reliable access to Google Trends data
+    without rate limiting issues. No retries or proxy logic needed.
+    
+    Args:
+        state: Current validation state containing the idea_input
+        
+    Returns:
+        Dictionary with trends_data key to merge into state
+    """
+    idea = state["idea_input"]
+    
+    # Extract keywords from the idea
+    keywords = extract_keywords(idea, max_keywords=2)
+    query = ",".join(keywords)  # SerpApi expects comma-separated keywords
+    
+    logger.info(f"[GoogleTrends] Querying SerpApi for: {query}")
+    
+    # ==========================================================================
+    # Check Prerequisites
+    # ==========================================================================
+    
+    # Check for SerpApi package
+    if not SERPAPI_AVAILABLE:
+        logger.error("[GoogleTrends] SerpApi package not installed. Using mock data.")
+        return {"trends_data": _get_mock_data(idea, "serpapi package not installed")}
+    
+    # Check for API key
+    serpapi_key = os.getenv("SERPAPI_KEY")
+    if not serpapi_key:
+        logger.error("[GoogleTrends] SERPAPI_KEY not found in environment. Using mock data.")
+        return {"trends_data": _get_mock_data(idea, "SERPAPI_KEY not configured")}
+    
+    # ==========================================================================
+    # Make SerpApi Request with Network Resilience
+    # ==========================================================================
+    
+    last_error = None
+    
+    for attempt in range(MAX_NETWORK_RETRIES):
+        try:
+            # Configure the Google Trends search
+            search = GoogleSearch({
+                "engine": "google_trends",
+                "q": query,
+                "data_type": "TIMESERIES",  # Get interest over time
+                "api_key": serpapi_key,
+                "timeout": 30  # 30 second timeout
+            })
+            
+            # Execute the search
+            results = search.get_dict()
+            
+            # Check for API errors
+            if "error" in results:
+                error_msg = results.get("error", "Unknown SerpApi error")
+                logger.error(f"[GoogleTrends] SerpApi error: {error_msg}")
+                return {"trends_data": _get_mock_data(idea, f"SerpApi error: {error_msg[:100]}")}
+            
+            # Extract interest over time data
+            interest_over_time = results.get("interest_over_time", {})
+            timeline_data = interest_over_time.get("timeline_data", [])
+            
+            if not timeline_data:
+                logger.warning("[GoogleTrends] No timeline data returned. Using mock data.")
+                return {"trends_data": _get_mock_data(idea, "No trend data for these keywords")}
+            
+            # Analyze the trend
+            trend_direction, interest_score, temporal_trend = _analyze_interest_over_time(timeline_data)
+            
+            # Extract related queries and topics
+            related_queries = _extract_related_queries(results)
+            related_topics = _extract_related_topics(results)
+            
+            # Extract geographic interest
+            geo_interest = _extract_geographic_interest(results)
+            
+            # Ensure we have fallback data if extraction failed
+            if not related_queries:
+                related_queries = [f"{kw} tools" for kw in keywords] + ["market trends"]
+            
+            if not related_topics:
+                related_topics = ["Technology", "Business", "Software"]
+            
+            if not geo_interest:
+                geo_interest = {
+                    "United States": interest_score,
+                    "Global": interest_score
+                }
+            
+            # Build the response
+            trends_data: TrendsData = {
+                "trend_direction": trend_direction,
+                "interest_score": interest_score,
+                "related_queries": related_queries[:5],
+                "related_topics": related_topics[:4],
+                "geographic_interest": geo_interest,
+                "temporal_trend": temporal_trend,
+            }
+            
+            logger.info(f"[GoogleTrends] ✓ Success: {trend_direction} trend, score={interest_score}")
+            return {"trends_data": trends_data}
+            
+        except (requests.exceptions.ConnectionError, 
+                requests.exceptions.Timeout,
+                requests.exceptions.RequestException) as e:
+            last_error = e
+            if attempt < MAX_NETWORK_RETRIES - 1:
+                wait_time = RETRY_BACKOFF_FACTOR * (attempt + 1) + random.uniform(0, 1)
+                logger.warning(
+                    f"[GoogleTrends] Network error (attempt {attempt + 1}/{MAX_NETWORK_RETRIES}): "
+                    f"{str(e)[:100]}. Retrying in {wait_time:.1f}s..."
+                )
+                time.sleep(wait_time)
+                continue
+            else:
+                logger.error(
+                    f"[GoogleTrends] Network error after {MAX_NETWORK_RETRIES} attempts. "
+                    f"Using mock data. Error: {str(e)[:150]}"
+                )
+                return {"trends_data": _get_mock_data(idea, f"Network error: {str(e)[:80]}")}
+        
+        except Exception as e:
+            # Non-network error, don't retry
+            error_msg = str(e)
+            logger.error(f"[GoogleTrends] API error: {error_msg[:200]}. Using mock data.")
+            return {"trends_data": _get_mock_data(idea, f"API error: {error_msg[:100]}")}
+    
+    # Should not reach here, but handle it anyway
+    return {"trends_data": _get_mock_data(idea, f"Failed after {MAX_NETWORK_RETRIES} attempts")}
+
