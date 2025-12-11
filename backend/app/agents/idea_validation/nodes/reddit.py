@@ -175,3 +175,12 @@ def _analyze_sentiment(content: str) -> tuple[str, float]:
         sentiment = "neutral"
     
     return sentiment, round(score, 2)
+
+def _extract_subreddit(url: str) -> str:
+    """Extract subreddit name from Reddit URL."""
+    if "reddit.com/r/" in url:
+        parts = url.split("/r/")
+        if len(parts) > 1:
+            subreddit = parts[1].split("/")[0]
+            return f"r/{subreddit}"
+    return "r/unknown"
