@@ -74,3 +74,64 @@ def extract_keywords(idea: str, max_keywords: int = 2) -> list[str]:
    
     words = [w for w in idea.lower().split() if len(w) > 2]
     return words[:max_keywords] if words else [idea[:30]]
+
+
+
+
+def _get_mock_data(idea: str, reason: str = "API unavailable") -> TrendsData:
+    keywords = idea.lower().split()[:3]
+    
+    trend_options = ["rising", "stable", "falling", "no_data"]
+    weights = [0.35, 0.35, 0.2, 0.1]
+    trend_direction = random.choices(trend_options, weights=weights)[0]
+    
+    interest_ranges = {
+        "rising": (55, 95),
+        "stable": (30, 60),
+        "falling": (10, 40),
+        "no_data": (0, 15)
+    }
+    
+    temporal_mapping = {
+        "rising": "growing",
+        "stable": "stable",
+        "falling": "declining",
+        "no_data": "stable"
+    }
+    
+    mock_related_queries = [
+        f"{keywords[0] if keywords else 'startup'} software",
+        f"best {keywords[0] if keywords else 'business'} tools",
+        f"{keywords[0] if keywords else 'app'} alternatives",
+        "startup ideas 2024",
+        "SaaS business model",
+        "market validation tools",
+    ]
+    
+    mock_related_topics = [
+        "Artificial Intelligence",
+        "Software as a Service",
+        "Entrepreneurship",
+        "Digital Transformation",
+        "Automation",
+    ]
+    
+    mock_regions = {
+        "United States": random.randint(60, 100),
+        "United Kingdom": random.randint(40, 80),
+        "Canada": random.randint(35, 75),
+        "India": random.randint(50, 90),
+    }
+    
+    min_interest, max_interest = interest_ranges[trend_direction]
+    
+    logger.warning(f"[GoogleTrends] Using mock data: {reason}")
+    
+    return {
+        "trend_direction": trend_direction,
+        "interest_score": random.randint(min_interest, max_interest),
+        "related_queries": random.sample(mock_related_queries, k=random.randint(3, 5)),
+        "related_topics": random.sample(mock_related_topics, k=random.randint(2, 4)),
+        "geographic_interest": mock_regions,
+        "temporal_trend": temporal_mapping[trend_direction],
+    }
