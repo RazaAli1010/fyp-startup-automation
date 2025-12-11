@@ -218,3 +218,26 @@ def _extract_related_topics(data: dict) -> list[str]:
                 topics.append(title)
     
     return topics[:4]
+
+
+
+def _extract_geographic_interest(data: dict) -> dict[str, int]:
+    """Extract geographic interest from SerpApi response."""
+    geo_interest = {}
+    
+    interest_by_region = data.get("interest_by_region", [])
+    
+    # Get top 5 regions
+    for item in interest_by_region[:5]:
+        location = item.get("location", "Unknown")
+        # Handle different value formats
+        if "values" in item and item["values"]:
+            value = item["values"][0].get("extracted_value", 0)
+        elif "extracted_value" in item:
+            value = item.get("extracted_value", 0)
+        else:
+            value = 0
+        geo_interest[location] = int(value)
+    
+    return geo_interest
+
