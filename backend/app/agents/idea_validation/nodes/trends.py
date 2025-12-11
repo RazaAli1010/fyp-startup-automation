@@ -49,16 +49,7 @@ STOP_WORDS = {
 
 
 def extract_keywords(idea: str, max_keywords: int = 2) -> list[str]:
-    """
-    Extract the most relevant keywords from a startup idea.
     
-    Args:
-        idea: The startup idea string
-        max_keywords: Maximum number of keywords to extract
-        
-    Returns:
-        List of 1-2 relevant keywords for Google Trends
-    """
     # Clean and tokenize
     idea_clean = re.sub(r'[^\w\s-]', ' ', idea.lower())
     words = idea_clean.split()
@@ -138,15 +129,7 @@ def _get_mock_data(idea: str, reason: str = "API unavailable") -> TrendsData:
 
 
 def _analyze_interest_over_time(timeline_data: list) -> tuple[str, int, str]:
-    """
-    Analyze the trend direction from SerpApi interest_over_time data.
     
-    Args:
-        timeline_data: List of data points from SerpApi response
-        
-    Returns:
-        Tuple of (trend_direction, interest_score, temporal_trend)
-    """
     if not timeline_data or len(timeline_data) < 4:
         return "stable", 50, "stable"
     
@@ -227,10 +210,10 @@ def _extract_geographic_interest(data: dict) -> dict[str, int]:
     
     interest_by_region = data.get("interest_by_region", [])
     
-    # Get top 5 regions
+   
     for item in interest_by_region[:5]:
         location = item.get("location", "Unknown")
-        # Handle different value formats
+        
         if "values" in item and item["values"]:
             value = item["values"][0].get("extracted_value", 0)
         elif "extracted_value" in item:
@@ -244,68 +227,49 @@ def _extract_geographic_interest(data: dict) -> dict[str, int]:
 
 
 async def search_trends(state: ValidationState) -> dict[str, Any]:
-    """
-    Fetch Google Trends data for the startup idea using SerpApi.
     
-    SerpApi provides stable, reliable access to Google Trends data
-    without rate limiting issues. No retries or proxy logic needed.
-    
-    Args:
-        state: Current validation state containing the idea_input
-        
-    Returns:
-        Dictionary with trends_data key to merge into state
-    """
     idea = state["idea_input"]
     
-    # Extract keywords from the idea
+   
     keywords = extract_keywords(idea, max_keywords=2)
-    query = ",".join(keywords)  # SerpApi expects comma-separated keywords
+    query = ",".join(keywords)  
     
     logger.info(f"[GoogleTrends] Querying SerpApi for: {query}")
     
-    # ==========================================================================
-    # Check Prerequisites
-    # ==========================================================================
     
-    # Check for SerpApi package
     if not SERPAPI_AVAILABLE:
         logger.error("[GoogleTrends] SerpApi package not installed. Using mock data.")
         return {"trends_data": _get_mock_data(idea, "serpapi package not installed")}
     
-    # Check for API key
     serpapi_key = os.getenv("SERPAPI_KEY")
     if not serpapi_key:
         logger.error("[GoogleTrends] SERPAPI_KEY not found in environment. Using mock data.")
         return {"trends_data": _get_mock_data(idea, "SERPAPI_KEY not configured")}
     
-    # ==========================================================================
-    # Make SerpApi Request with Network Resilience
-    # ==========================================================================
     
     last_error = None
     
     for attempt in range(MAX_NETWORK_RETRIES):
         try:
-            # Configure the Google Trends search
+            
             search = GoogleSearch({
                 "engine": "google_trends",
                 "q": query,
-                "data_type": "TIMESERIES",  # Get interest over time
+                "data_type": "TIMESERIES", 
                 "api_key": serpapi_key,
-                "timeout": 30  # 30 second timeout
+                "timeout": 30  
             })
             
-            # Execute the search
+         
             results = search.get_dict()
             
-            # Check for API errors
+            
             if "error" in results:
                 error_msg = results.get("error", "Unknown SerpApi error")
                 logger.error(f"[GoogleTrends] SerpApi error: {error_msg}")
                 return {"trends_data": _get_mock_data(idea, f"SerpApi error: {error_msg[:100]}")}
             
-            # Extract interest over time data
+            
             interest_over_time = results.get("interest_over_time", {})
             timeline_data = interest_over_time.get("timeline_data", [])
             
@@ -313,17 +277,16 @@ async def search_trends(state: ValidationState) -> dict[str, Any]:
                 logger.warning("[GoogleTrends] No timeline data returned. Using mock data.")
                 return {"trends_data": _get_mock_data(idea, "No trend data for these keywords")}
             
-            # Analyze the trend
             trend_direction, interest_score, temporal_trend = _analyze_interest_over_time(timeline_data)
             
-            # Extract related queries and topics
+            
             related_queries = _extract_related_queries(results)
             related_topics = _extract_related_topics(results)
             
-            # Extract geographic interest
+           
             geo_interest = _extract_geographic_interest(results)
             
-            # Ensure we have fallback data if extraction failed
+        
             if not related_queries:
                 related_queries = [f"{kw} tools" for kw in keywords] + ["market trends"]
             
@@ -336,7 +299,7 @@ async def search_trends(state: ValidationState) -> dict[str, Any]:
                     "Global": interest_score
                 }
             
-            # Build the response
+            
             trends_data: TrendsData = {
                 "trend_direction": trend_direction,
                 "interest_score": interest_score,
@@ -369,11 +332,11 @@ async def search_trends(state: ValidationState) -> dict[str, Any]:
                 return {"trends_data": _get_mock_data(idea, f"Network error: {str(e)[:80]}")}
         
         except Exception as e:
-            # Non-network error, don't retry
+            
             error_msg = str(e)
             logger.error(f"[GoogleTrends] API error: {error_msg[:200]}. Using mock data.")
             return {"trends_data": _get_mock_data(idea, f"API error: {error_msg[:100]}")}
     
-    # Should not reach here, but handle it anyway
+    
     return {"trends_data": _get_mock_data(idea, f"Failed after {MAX_NETWORK_RETRIES} attempts")}
 
