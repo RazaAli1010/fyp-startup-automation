@@ -138,3 +138,40 @@ def _get_mock_data(idea: str) -> RedditSentiment:
             }
         ]
     }
+
+def _analyze_sentiment(content: str) -> tuple[str, float]:
+    
+    content_lower = content.lower()
+    
+    positive_keywords = [
+        "love", "great", "amazing", "awesome", "excellent", "fantastic",
+        "helpful", "useful", "works well", "recommend", "perfect", "solved",
+        "easy", "intuitive", "efficient", "impressed", "game changer"
+    ]
+    
+    negative_keywords = [
+        "hate", "terrible", "awful", "horrible", "worst", "frustrating",
+        "useless", "broken", "doesn't work", "waste", "scam", "avoid",
+        "confusing", "complicated", "buggy", "disappointed", "overpriced"
+    ]
+    
+    positive_count = sum(1 for kw in positive_keywords if kw in content_lower)
+    negative_count = sum(1 for kw in negative_keywords if kw in content_lower)
+    
+    total = positive_count + negative_count
+    if total == 0:
+        return "neutral", 0.0
+    
+    score = (positive_count - negative_count) / max(total, 1)
+    score = max(-1.0, min(1.0, score))  # Clamp to [-1, 1]
+    
+    if score > 0.2:
+        sentiment = "positive"
+    elif score < -0.2:
+        sentiment = "negative"
+    elif positive_count > 0 and negative_count > 0:
+        sentiment = "mixed"
+    else:
+        sentiment = "neutral"
+    
+    return sentiment, round(score, 2)
