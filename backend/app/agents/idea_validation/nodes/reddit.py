@@ -74,3 +74,67 @@ def _categorize_tavily_error(error: Exception) -> str:
     
     return f"Unexpected error: {error_type}"
 
+def _get_mock_data(idea: str) -> RedditSentiment:
+    
+    keywords = idea.lower().split()
+    
+    sentiment_options = ["positive", "neutral", "mixed", "negative"]
+    weights = [0.3, 0.35, 0.25, 0.1]
+    overall_sentiment = random.choices(sentiment_options, weights=weights)[0]
+    
+    sentiment_scores = {
+        "positive": random.uniform(0.3, 0.8),
+        "neutral": random.uniform(-0.2, 0.2),
+        "mixed": random.uniform(-0.1, 0.3),
+        "negative": random.uniform(-0.8, -0.2)
+    }
+    
+    mock_subreddits = [
+        "r/startups", "r/entrepreneur", "r/SaaS", 
+        "r/smallbusiness", "r/Startup_Ideas", "r/Business_Ideas"
+    ]
+    
+    mock_concerns = [
+        "Market might be too saturated",
+        "Customer acquisition cost could be high",
+        "Technical implementation complexity",
+        "Regulatory challenges in some regions",
+        "Existing solutions already address this"
+    ]
+    
+    mock_praises = [
+        "Solves a real pain point",
+        "Good timing with market trends",
+        "Clear monetization path",
+        "Strong differentiation potential",
+        "Growing demand in this space"
+    ]
+    
+    return {
+        "overall_sentiment": overall_sentiment,
+        "sentiment_score": round(sentiment_scores[overall_sentiment], 2),
+        "total_posts_analyzed": random.randint(15, 150),
+        "top_subreddits": random.sample(mock_subreddits, k=random.randint(2, 4)),
+        "key_concerns": random.sample(mock_concerns, k=random.randint(1, 3)),
+        "key_praises": random.sample(mock_praises, k=random.randint(1, 3)),
+        "sample_posts": [
+            {
+                "title": f"Anyone building something for {keywords[0] if keywords else 'this space'}?",
+                "score": random.randint(10, 500),
+                "sentiment": "positive",
+                "subreddit": "r/startups"
+            },
+            {
+                "title": f"Thoughts on {idea[:50]}...",
+                "score": random.randint(5, 200),
+                "sentiment": overall_sentiment,
+                "subreddit": "r/entrepreneur"
+            },
+            {
+                "title": f"Market analysis: {keywords[0] if keywords else 'startup'} industry",
+                "score": random.randint(20, 300),
+                "sentiment": "neutral",
+                "subreddit": "r/Business_Ideas"
+            }
+        ]
+    }
