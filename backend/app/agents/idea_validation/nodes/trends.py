@@ -135,3 +135,65 @@ def _get_mock_data(idea: str, reason: str = "API unavailable") -> TrendsData:
         "geographic_interest": mock_regions,
         "temporal_trend": temporal_mapping[trend_direction],
     }
+
+
+def _analyze_interest_over_time(timeline_data: list) -> tuple[str, int, str]:
+    """
+    Analyze the trend direction from SerpApi interest_over_time data.
+    
+    Args:
+        timeline_data: List of data points from SerpApi response
+        
+    Returns:
+        Tuple of (trend_direction, interest_score, temporal_trend)
+    """
+    if not timeline_data or len(timeline_data) < 4:
+        return "stable", 50, "stable"
+    
+    # Extract values from timeline
+    values = []
+    for point in timeline_data:
+        # SerpApi returns values in different formats depending on query
+        if "values" in point and point["values"]:
+            # Multi-keyword query
+            val = point["values"][0].get("extracted_value", 0)
+        elif "extracted_value" in point:
+            # Single keyword query
+            val = point.get("extracted_value", 0)
+        else:
+            val = 0
+        values.append(val)
+    
+    if not values:
+        return "stable", 50, "stable"
+    
+    # Calculate interest score (peak value)
+    interest_score = max(values) if values else 50
+    
+    # Compare first quarter vs last quarter
+    quarter_size = max(1, len(values) // 4)
+    first_quarter_avg = sum(values[:quarter_size]) / quarter_size if values[:quarter_size] else 0
+    last_quarter_avg = sum(values[-quarter_size:]) / quarter_size if values[-quarter_size:] else 0
+    
+    # Determine trend direction
+    if first_quarter_avg == 0:
+        if last_quarter_avg > 10:
+            trend_direction = "rising"
+            temporal_trend = "growing"
+        else:
+            trend_direction = "stable"
+            temporal_trend = "stable"
+    else:
+        ratio = last_quarter_avg / first_quarter_avg
+        
+        if ratio > 1.2:
+            trend_direction = "rising"
+            temporal_trend = "growing"
+        elif ratio < 0.8:
+            trend_direction = "falling"
+            temporal_trend = "declining"
+        else:
+            trend_direction = "stable"
+            temporal_trend = "stable"
+    
+    return trend_direction, int(interest_score), temporal_trend
