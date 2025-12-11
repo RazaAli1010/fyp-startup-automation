@@ -1,0 +1,368 @@
+
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.*.local
+
+# Allow example env files (templates without secrets)
+!.env.example
+!env.example
+!.env.template
+
+# =============================================================================
+# PYTHON & BACKEND
+# =============================================================================
+
+# Virtual Environments (including the existing startup-venv)
+venv/
+.venv/
+env/
+.env/
+ENV/
+startup-venv/
+backend/venv/
+backend/.venv/
+**/venv/
+**/.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Scrapy stuff
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+# poetry.lock  # Uncomment if you don't want to commit poetry.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Local databases
+*.sqlite3
+*.sqlite
+*.db
+db.sqlite3
+db.sqlite
+backend/*.sqlite3
+backend/*.db
+
+# =============================================================================
+# NODE.JS & FRONTEND (Next.js)
+# =============================================================================
+
+# Dependencies
+node_modules/
+**/node_modules/
+frontend/node_modules/
+.pnp/
+.pnp.js
+.yarn/install-state.gz
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+frontend/build/
+.next/
+out/
+
+# Production build
+frontend/dist/
+dist/
+
+# Next.js cache
+.next/cache/
+
+# Vercel
+.vercel
+
+# Testing
+coverage/
+frontend/coverage/
+.nyc_output/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# PWA files
+**/public/sw.js
+**/public/workbox-*.js
+**/public/worker-*.js
+**/public/sw.js.map
+**/public/workbox-*.js.map
+
+# Storybook
+storybook-static/
+
+# Temporary folders
+tmp/
+temp/
+
+# =============================================================================
+# SYSTEM FILES
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# macOS Thumbnails
+Icon
+
+# macOS Directory metadata
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# IDE & EDITOR FILES
+# =============================================================================
+
+# VS Code / Cursor
+.vscode/
+.cursor/
+*.code-workspace
+
+# JetBrains (PyCharm, WebStorm, IntelliJ)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.idea_modules/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.swp
+*.swo
+*.swn
+*~
+.netrwhist
+tags
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================================================
+# LOGS & RUNTIME DATA
+# =============================================================================
+
+# Logs
+logs/
+*.log
+**/*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# =============================================================================
+# MISC & PROJECT-SPECIFIC
+# =============================================================================
+
+# Optional: Ignore local configuration overrides
+*.local
+
+# Docker (if used later)
+docker-compose.override.yml
+
+# Terraform (if used later)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Secrets and credentials (extra safety)
+*.pem
+*.key
+credentials.json
+secrets.json
+service-account.json
+
+# Large data files (if any)
+*.csv
+*.xlsx
+!**/fixtures/*.csv
+*.parquet
+*.pickle
+*.pkl
+
+# ML Models (if any large models are added)
+*.h5
+*.hdf5
+*.onnx
+*.pt
+*.pth
+models/
+!models/.gitkeep
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# =============================================================================
+# END OF .gitignore
+# =============================================================================
+
