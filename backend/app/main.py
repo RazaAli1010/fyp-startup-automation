@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .routers import validation_router
+from .routers.validation import router as validation_router
 
 
 # Load environment variables from .env file
