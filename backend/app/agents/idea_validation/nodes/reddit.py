@@ -1,337 +1,763 @@
-import asyncio
-import logging
+"""
+Reddit Sentiment Analysis Node (Async Optimized)
+
+Uses Tavily API to search Reddit for discussions about the startup idea,
+with domain-specific relevance filtering and weighted sentiment analysis.
+
+PERFORMANCE OPTIMIZATIONS:
+- Async HTTP calls with httpx
+- Concurrent query execution
+- Batched embedding calls
+- 8s timeout per request
+- Max 2 retries with 1.5s backoff
+"""
+
 import os
-import random
-import socket
-from typing import Any
+import re
+import math
+import statistics
+import asyncio
+from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
 
-from ..state import ValidationState, RedditSentiment
+import httpx
+from openai import AsyncOpenAI
+from textblob import TextBlob
+
+from ..state import ValidationState, RedditSentiment, SamplePost, QualityMetrics
+from ..timing import StepTimer, log_timing
+from ..http_client import Timeouts, RetryConfig, get_timeout
+from ..epistemic_types import TRANSACTIONAL_SIGNALS, PRODUCT_SIGNALS
 
 
-logger = logging.getLogger(__name__)
+# Configuration
+RELEVANCE_THRESHOLD = 0.55
+HIGH_RELEVANCE_THRESHOLD = 0.75
+MIN_SAMPLE_SIZE = 50
+MAX_SAMPLE_SIZE = 200
+MIN_CONTENT_LENGTH = 50
+EMBEDDING_MODEL = "text-embedding-3-small"
+
+# Domain-specific keywords are now dynamically extracted from state['intent_keywords']
+# Removing hardcoded PARKING_DOMAIN_KEYWORDS
+
+# Excluded subreddits (off-domain communities)
+EXCLUDED_SUBREDDITS = {
+    "vanlife", "vandwellers", "rvliving", "frugal", "digitalnomad",
+    "overlanding", "truckers", "trucking", "gorving", "skoolies",
+    "priusdwellers", "urbancarliving", "homeless", "vagabond",
+    "solotravel", "backpacking", "camping", "hiking", "roadtrip"
+}
 
 
-def _is_network_error(error: Exception) -> tuple[bool, str]:
+def _get_api_keys() -> Tuple[str, str]:
+    """Get API keys from environment."""
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
     
-    error_str = str(error).lower()
-    error_type = type(error).__name__
+    if not tavily_key:
+        raise ValueError("TAVILY_API_KEY environment variable not set")
+    if not openai_key:
+        raise ValueError("OPENAI_API_KEY environment variable not set")
     
-    # DNS resolution errors
-    if isinstance(error, socket.gaierror) or "getaddrinfo" in error_str:
-        return True, "DNS resolution failed"
-    
-    # Connection errors (check string patterns)
-    if any(term in error_str for term in [
-        "connectionerror", "connection refused", "connection reset",
-        "connection aborted", "connection timeout", "nameresolutionerror",
-        "nodename nor servname", "temporary failure in name resolution"
-    ]):
-        return True, "Connection error"
-    
-    # Timeout errors
-    if any(term in error_str for term in ["timeout", "timed out"]):
-        return True, "Request timeout"
-    
-    # SSL/TLS errors
-    if any(term in error_str for term in ["ssl", "certificate", "handshake"]):
-        return True, "SSL/TLS error"
-    
-    # Check for requests library specific errors
-    if "requests.exceptions" in error_type or "urllib3" in error_type:
-        return True, "HTTP client error"
-    
-    # Check for httpx/aiohttp specific errors (if Tavily uses these)
-    if any(lib in error_type.lower() for lib in ["httpx", "aiohttp", "clienterror"]):
-        return True, "Async HTTP error"
-    
-    return False, "Unknown error"
+    return tavily_key, openai_key
 
-def _categorize_tavily_error(error: Exception) -> str:
-    
-    error_str = str(error).lower()
-    error_type = type(error).__name__
-    
-    # Check for network errors first
-    is_network, network_category = _is_network_error(error)
-    if is_network:
-        return f"Network error ({network_category})"
-    
-    # API-specific errors
-    if "api" in error_type.lower() or "tavily" in error_type.lower():
-        if "key" in error_str or "auth" in error_str or "401" in error_str:
-            return "Authentication error (invalid API key)"
-        if "rate" in error_str or "429" in error_str or "limit" in error_str:
-            return "Rate limit exceeded"
-        if "400" in error_str or "bad request" in error_str:
-            return "Bad request (invalid parameters)"
-        if "500" in error_str or "502" in error_str or "503" in error_str:
-            return "Tavily server error"
-        return "Tavily API error"
-    
-    # Generic categorization
-    if "json" in error_str or "decode" in error_str:
-        return "Invalid response format"
-    
-    return f"Unexpected error: {error_type}"
 
-def _get_mock_data(idea: str) -> RedditSentiment:
+def _extract_domain_context(idea: str, intent_keywords: List[str]) -> List[str]:
+    """
+    Extract domain-specific context from the idea using global intent keywords.
+    """
+    # Use the intent keywords extracted by the upstream node
+    if intent_keywords:
+        return intent_keywords
     
-    keywords = idea.lower().split()
+    # Fallback extraction if no keywords provided
+    idea_lower = idea.lower()
+    words = re.split(r'[\s\-_,;:\.!?\'\"()\[\]{}]+', idea_lower)
+    meaningful = [w for w in words if len(w) > 3 and w.isalpha()]
     
-    sentiment_options = ["positive", "neutral", "mixed", "negative"]
-    weights = [0.3, 0.35, 0.25, 0.1]
-    overall_sentiment = random.choices(sentiment_options, weights=weights)[0]
+    return meaningful[:10]
+
+
+def _generate_reddit_queries(idea: str, domain_keywords: List[str]) -> List[str]:
+    """
+    Generate domain-specific Reddit search queries.
+    """
+    queries = []
     
-    sentiment_scores = {
-        "positive": random.uniform(0.3, 0.8),
-        "neutral": random.uniform(-0.2, 0.2),
-        "mixed": random.uniform(-0.1, 0.3),
-        "negative": random.uniform(-0.8, -0.2)
-    }
+    # Base query with the idea
+    queries.append(f"{idea} site:reddit.com")
     
-    mock_subreddits = [
-        "r/startups", "r/entrepreneur", "r/SaaS", 
-        "r/smallbusiness", "r/Startup_Ideas", "r/Business_Ideas"
+    # Intent-anchored queries
+    if domain_keywords:
+        # Combine idea core with domain keywords
+        for keyword in domain_keywords[:3]:
+            queries.append(f"{keyword} reddit discussion")
+            queries.append(f"{keyword} opinions experience")
+            
+        # Specific intent queries
+        core_intent = " ".join(domain_keywords[:2])
+        queries.append(f"{core_intent} reddit")
+        queries.append(f"{core_intent} app service")
+    
+    # Deduplicate
+    seen = set()
+    unique = []
+    for q in queries:
+        q_lower = q.lower().strip()
+        if q_lower not in seen:
+            seen.add(q_lower)
+            unique.append(q)
+    
+    return unique[:8]
+
+
+def _is_excluded_subreddit(subreddit: str) -> bool:
+    """Check if subreddit should be excluded."""
+    if not subreddit:
+        return False
+    return subreddit.lower().strip() in EXCLUDED_SUBREDDITS
+
+
+def _clean_text(text: str) -> str:
+    """
+    Clean text by removing noise, boilerplate, and broken content.
+    Returns empty string if content is garbage.
+    """
+    if not text:
+        return ""
+    
+    # Remove common boilerplate patterns
+    boilerplate_patterns = [
+        r'cookie\s*(policy|consent|banner)',
+        r'accept\s*all\s*cookies',
+        r'(privacy|terms)\s*(policy|of\s*service)',
+        r'subscribe\s*to\s*(our)?\s*newsletter',
+        r'sign\s*up\s*for\s*(our)?\s*newsletter',
+        r'(click|tap)\s*here\s*to',
+        r'advertisement',
+        r'sponsored\s*content',
+        r'\[deleted\]',
+        r'\[removed\]',
+        r'u/\w+',
+        r'r/\w+\s*•',
+        r'\d+\s*(upvotes?|points?|comments?)',
+        r'(ago|hours?|days?|weeks?|months?)\s*$',
+        r'<[^>]+>',  # HTML tags
+        r'&\w+;',  # HTML entities
+        r'javascript:',
+        r'onclick=',
     ]
     
-    mock_concerns = [
-        "Market might be too saturated",
-        "Customer acquisition cost could be high",
-        "Technical implementation complexity",
-        "Regulatory challenges in some regions",
-        "Existing solutions already address this"
-    ]
+    for pattern in boilerplate_patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
     
-    mock_praises = [
-        "Solves a real pain point",
-        "Good timing with market trends",
-        "Clear monetization path",
-        "Strong differentiation potential",
-        "Growing demand in this space"
-    ]
+    # Remove URLs
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'www\.\S+', '', text)
     
-    return {
-        "overall_sentiment": overall_sentiment,
-        "sentiment_score": round(sentiment_scores[overall_sentiment], 2),
-        "total_posts_analyzed": random.randint(15, 150),
-        "top_subreddits": random.sample(mock_subreddits, k=random.randint(2, 4)),
-        "key_concerns": random.sample(mock_concerns, k=random.randint(1, 3)),
-        "key_praises": random.sample(mock_praises, k=random.randint(1, 3)),
-        "sample_posts": [
-            {
-                "title": f"Anyone building something for {keywords[0] if keywords else 'this space'}?",
-                "score": random.randint(10, 500),
-                "sentiment": "positive",
-                "subreddit": "r/startups"
-            },
-            {
-                "title": f"Thoughts on {idea[:50]}...",
-                "score": random.randint(5, 200),
-                "sentiment": overall_sentiment,
-                "subreddit": "r/entrepreneur"
-            },
-            {
-                "title": f"Market analysis: {keywords[0] if keywords else 'startup'} industry",
-                "score": random.randint(20, 300),
-                "sentiment": "neutral",
-                "subreddit": "r/Business_Ideas"
-            }
-        ]
-    }
+    # Remove base64 encoded content
+    text = re.sub(r'data:[^;]+;base64,[A-Za-z0-9+/=]+', '', text)
+    
+    # Remove excessive whitespace
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    
+    # Remove truncation indicators
+    truncation_patterns = [r'\.\.\.$', r'…$', r'\.{3,}$', r'\s+\.\s*$']
+    for pattern in truncation_patterns:
+        text = re.sub(pattern, '', text)
+    
+    # Validate remaining content
+    alpha_count = sum(1 for c in text if c.isalpha())
+    if alpha_count < 20:
+        return ""
+    
+    # Check for nonsense (too many special characters)
+    special_ratio = sum(1 for c in text if not c.isalnum() and not c.isspace()) / max(len(text), 1)
+    if special_ratio > 0.3:
+        return ""
+    
+    # Check for truncated/incomplete sentences
+    if len(text) < MIN_CONTENT_LENGTH:
+        return ""
+    
+    return text
 
-def _analyze_sentiment(content: str) -> tuple[str, float]:
-    
+
+def _calculate_recency_weight(text: str) -> float:
+    """
+    Calculate weight based on post recency (estimated from text if date not available)
+    or just default to 1.0 if no date found (conservative).
+    """
+    if re.search(r'\d+\s+years?\s+ago', text):
+        match = re.search(r'(\d+)\s+years?\s+ago', text)
+        if match:
+            years = int(match.group(1))
+            if years >= 2:
+                return 0.2  # Old content (>2 years)
+            if years >= 1:
+                return 0.5  # Somewhat old (1-2 years)
+                
+    return 1.0  # Default to recent/relevant
+
+
+def _detect_transactional_intent(text: str) -> bool:
+    """Check for transactional keywords in text."""
+    text_lower = text.lower()
+    for signal in TRANSACTIONAL_SIGNALS:
+        if signal in text_lower:
+            return True
+            
+    # Also check for product signals
+    for signal in PRODUCT_SIGNALS:
+        if signal in text_lower:
+            return True
+            
+    return False
+
+
+def _has_domain_relevance(content: str, domain_keywords: List[str]) -> bool:
+    """
+    Check if content explicitly mentions domain-specific keywords.
+    """
     content_lower = content.lower()
+    matches = sum(1 for kw in domain_keywords if kw.lower() in content_lower)
+    return matches >= 1
+
+
+def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Calculate cosine similarity between two vectors."""
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    magnitude1 = math.sqrt(sum(a * a for a in vec1))
+    magnitude2 = math.sqrt(sum(b * b for b in vec2))
     
-    positive_keywords = [
-        "love", "great", "amazing", "awesome", "excellent", "fantastic",
-        "helpful", "useful", "works well", "recommend", "perfect", "solved",
-        "easy", "intuitive", "efficient", "impressed", "game changer"
-    ]
+    if magnitude1 == 0 or magnitude2 == 0:
+        return 0.0
     
-    negative_keywords = [
-        "hate", "terrible", "awful", "horrible", "worst", "frustrating",
-        "useless", "broken", "doesn't work", "waste", "scam", "avoid",
-        "confusing", "complicated", "buggy", "disappointed", "overpriced"
-    ]
-    
-    positive_count = sum(1 for kw in positive_keywords if kw in content_lower)
-    negative_count = sum(1 for kw in negative_keywords if kw in content_lower)
-    
-    total = positive_count + negative_count
-    if total == 0:
-        return "neutral", 0.0
-    
-    score = (positive_count - negative_count) / max(total, 1)
-    score = max(-1.0, min(1.0, score))  # Clamp to [-1, 1]
-    
-    if score > 0.2:
-        sentiment = "positive"
-    elif score < -0.2:
-        sentiment = "negative"
-    elif positive_count > 0 and negative_count > 0:
-        sentiment = "mixed"
+    return dot_product / (magnitude1 * magnitude2)
+
+
+def _analyze_sentiment(text: str) -> Tuple[float, float]:
+    """
+    Analyze sentiment using TextBlob.
+    Returns (polarity, subjectivity).
+    """
+    try:
+        blob = TextBlob(text)
+        return blob.sentiment.polarity, blob.sentiment.subjectivity
+    except Exception:
+        return 0.0, 0.5
+
+
+def _classify_sentiment(score: float) -> str:
+    """Classify sentiment score into category."""
+    if score >= 0.15:
+        return "positive"
+    elif score <= -0.15:
+        return "negative"
     else:
-        sentiment = "neutral"
-    
-    return sentiment, round(score, 2)
+        return "neutral"
 
-def _extract_subreddit(url: str) -> str:
-    """Extract subreddit name from Reddit URL."""
-    if "reddit.com/r/" in url:
-        parts = url.split("/r/")
-        if len(parts) > 1:
-            subreddit = parts[1].split("/")[0]
-            return f"r/{subreddit}"
-    return "r/unknown"
 
-async def search_reddit(state: ValidationState) -> dict[str, Any]:
+def _extract_concerns_and_praises(
+    posts: List[Dict],
+    domain_keywords: List[str]
+) -> Tuple[List[str], List[str]]:
     """
-    Analyze Reddit sentiment for the given startup idea using Tavily.
+    Extract real user concerns and praises from posts.
+    Only returns defaults if genuinely zero relevant content.
+    """
+    concerns = []
+    praises = []
     
-    This node searches Reddit for discussions related to the idea
-    and performs sentiment analysis on the results.
+    # Patterns for extracting concerns
+    concern_patterns = [
+        r'(?:worried|concern|problem|issue|risk|challenge|difficult|annoying|frustrating)[\s:,]+([^.!?]{10,80})',
+        r'(?:don\'t|doesn\'t|won\'t|can\'t|hate|dislike)[\s]+([^.!?]{10,80})',
+        r'(?:safety|security|liability|insurance|trust)[\s]+(?:issue|concern|problem)s?',
+        r'(?:scam|fraud|sketchy|unsafe|dangerous)',
+    ]
     
-    Features:
-    - Comprehensive network error handling (DNS, connection, timeout)
-    - Graceful fallback to mock data on any failure
-    - Detailed error logging for debugging
+    # Patterns for extracting praises
+    praise_patterns = [
+        r'(?:love|great|amazing|excellent|helpful|useful|convenient|easy|perfect)[\s:,]+([^.!?]{10,80})',
+        r'(?:works?\s+(?:really\s+)?well|highly\s+recommend|game\s*changer)',
+        r'(?:saved?\s+(?:me\s+)?(?:money|time|hassle))',
+        r'(?:much\s+(?:better|easier|cheaper)\s+than)',
+    ]
     
-    Args:
-        state: Current validation state containing the idea_input
+    for post in posts[:30]:
+        content = post.get("content", "").lower()
+        sentiment = post.get("sentiment_score", 0)
         
-    Returns:
-        Dictionary with reddit_sentiment key to merge into state
+        # Extract concerns from negative sentiment posts
+        if sentiment < 0:
+            for pattern in concern_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 10:
+                        concern = match.strip().capitalize()
+                        if concern not in concerns and len(concerns) < 8:
+                            concerns.append(concern)
+        
+        # Extract praises from positive sentiment posts
+        elif sentiment > 0:
+            for pattern in praise_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 10:
+                        praise = match.strip().capitalize()
+                        if praise not in praises and len(praises) < 8:
+                            praises.append(praise)
+    
+    # Fallback: extract any mentions of domain keywords in context
+    if not concerns and not praises:
+        for post in posts[:20]:
+            content = post.get("content", "")
+            for kw in domain_keywords[:5]:
+                pattern = rf'({kw}[^.!?]{{10,60}})'
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches[:1]:
+                    if post.get("sentiment_score", 0) < 0:
+                        if len(concerns) < 5:
+                            concerns.append(match.strip().capitalize())
+                    elif post.get("sentiment_score", 0) > 0:
+                        if len(praises) < 5:
+                            praises.append(match.strip().capitalize())
+    
+    # Only use defaults if truly no relevant content
+    if not concerns and len(posts) > 0:
+        concerns = ["Limited specific concerns found in analyzed posts"]
+    elif not concerns:
+        concerns = ["Insufficient data for concern analysis"]
+    
+    if not praises and len(posts) > 0:
+        praises = ["Limited specific praises found in analyzed posts"]
+    elif not praises:
+        praises = ["Insufficient data for praise analysis"]
+    
+    return concerns[:5], praises[:5]
+
+
+def _calculate_sentiment_metrics(
+    posts: List[Dict]
+) -> Tuple[float, float, float, Tuple[float, float]]:
     """
-    idea = state["idea_input"]
+    Calculate weighted sentiment with variance and uncertainty.
+    Returns (weighted_sentiment, variance, uncertainty, confidence_interval).
+    """
+    if not posts:
+        return 0.0, 0.0, 1.0, (-1.0, 1.0)
     
-    # Check for Tavily API key
-    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    sentiment_scores = [p["sentiment_score"] for p in posts]
+    relevance_scores = [p["relevance_score"] for p in posts]
     
-    if not tavily_api_key:
-        logger.warning("[Tavily/Reddit] API key not found. Falling back to mock data.")
-        await asyncio.sleep(random.uniform(0.3, 0.8))  # Brief simulated latency
-        return {"reddit_sentiment": _get_mock_data(idea)}
+    # Weighted sentiment
+    total_weight = sum(relevance_scores)
+    if total_weight == 0:
+        weighted_sentiment = 0.0
+    else:
+        weighted_sentiment = sum(
+            s * r for s, r in zip(sentiment_scores, relevance_scores)
+        ) / total_weight
+    
+    # Variance
+    if len(sentiment_scores) > 1:
+        variance = statistics.variance(sentiment_scores)
+    else:
+        variance = 0.5
+    
+    # Uncertainty based on sample size and variance
+    sample_factor = min(len(posts) / MIN_SAMPLE_SIZE, 1.0)
+    variance_factor = 1 - min(variance, 0.5)
+    uncertainty = 1 - (sample_factor * variance_factor * 0.7)
+    uncertainty = max(0.1, min(0.9, uncertainty))
+    
+    # Confidence interval
+    std_dev = math.sqrt(variance) if variance > 0 else 0.2
+    margin = 1.96 * std_dev / math.sqrt(max(len(posts), 1))
+    lower = max(-1.0, weighted_sentiment - margin)
+    upper = min(1.0, weighted_sentiment + margin)
+    
+    return weighted_sentiment, variance, uncertainty, (lower, upper)
+
+
+async def _search_tavily_async(
+    client: httpx.AsyncClient,
+    api_key: str,
+    query: str,
+    timeout: float = Timeouts.TAVILY
+) -> List[Dict]:
+    """
+    Search Tavily API asynchronously with timeout and retry.
+    """
+    url = "https://api.tavily.com/search"
+    payload = {
+        "api_key": api_key,
+        "query": query,
+        "search_depth": "advanced",
+        "include_domains": ["reddit.com"],
+        "max_results": 50,
+        "include_raw_content": True
+    }
+    
+    for attempt in range(RetryConfig.MAX_RETRIES + 1):
+        try:
+            response = await client.post(
+                url,
+                json=payload,
+                timeout=timeout
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("results", [])
+            
+            # Non-retryable errors
+            if response.status_code in RetryConfig.NON_RETRYABLE_CODES:
+                log_timing("reddit", f"Tavily non-retryable error: {response.status_code}")
+                return []
+            
+            # Retryable errors
+            if attempt < RetryConfig.MAX_RETRIES:
+                backoff = min(
+                    RetryConfig.INITIAL_BACKOFF * (2 ** attempt),
+                    RetryConfig.MAX_BACKOFF
+                )
+                await asyncio.sleep(backoff)
+                
+        except httpx.TimeoutException:
+            log_timing("reddit", f"Tavily timeout on attempt {attempt + 1}")
+            if attempt < RetryConfig.MAX_RETRIES:
+                await asyncio.sleep(RetryConfig.INITIAL_BACKOFF)
+        except Exception as e:
+            log_timing("reddit", f"Tavily error: {str(e)[:50]}")
+            return []
+    
+    return []
+
+
+async def _get_embeddings_batch(
+    client: AsyncOpenAI,
+    texts: List[str],
+    timeout: float = Timeouts.OPENAI_EMBEDDING
+) -> List[List[float]]:
+    """
+    Get embeddings for multiple texts in a single batch call.
+    Returns list of embedding vectors (or empty list for failed texts).
+    """
+    if not texts:
+        return []
+    
+    # Truncate texts to fit token limits
+    truncated = [t[:8000] for t in texts]
     
     try:
-        # Import Tavily client (may raise ImportError)
-        try:
-            from tavily import TavilyClient
-        except ImportError as ie:
-            logger.warning(f"[Tavily/Reddit] Tavily package not installed: {ie}. Falling back to mock data.")
-            return {"reddit_sentiment": _get_mock_data(idea)}
-        
-        # Initialize client
-        tavily = TavilyClient(api_key=tavily_api_key)
-        
-        # Search Reddit for discussions about the idea
-        query = f"{idea} complaints pain points reviews"
-        
-        logger.info(f"[Tavily/Reddit] Searching Reddit for: {query[:50]}...")
-        
-        # This is the main API call that can fail with network errors
-        results = tavily.search(
-            query=query,
-            include_domains=["reddit.com"],
-            search_depth="advanced",
-            max_results=5
+        response = await asyncio.wait_for(
+            client.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=truncated
+            ),
+            timeout=timeout
         )
-        
-        # Parse and analyze the results
-        search_results = results.get("results", [])
-        
-        if not search_results:
-            logger.info("[Tavily/Reddit] No Reddit results found. Falling back to mock data.")
-            return {"reddit_sentiment": _get_mock_data(idea)}
-        
-        # Aggregate content for sentiment analysis
-        all_content = []
-        sample_posts = []
-        subreddits_found = set()
-        key_concerns = []
-        key_praises = []
-        
-        for result in search_results:
-            url = result.get("url", "")
-            title = result.get("title", "No title")
-            content = result.get("content", "")
-            
-            all_content.append(content)
-            
-            # Extract subreddit
-            subreddit = _extract_subreddit(url)
-            subreddits_found.add(subreddit)
-            
-            # Analyze individual post sentiment
-            post_sentiment, _ = _analyze_sentiment(content)
-            
-            sample_posts.append({
-                "title": title[:100] + "..." if len(title) > 100 else title,
-                "score": random.randint(10, 200),  # Tavily doesn't provide Reddit scores
-                "sentiment": post_sentiment,
-                "subreddit": subreddit
-            })
-            
-            # Extract concerns and praises from content
-            content_lower = content.lower()
-            
-            concern_indicators = ["problem", "issue", "frustrating", "wish", "but", "however", "missing", "need"]
-            praise_indicators = ["love", "great", "helpful", "useful", "works", "easy", "recommend"]
-            
-            if any(ind in content_lower for ind in concern_indicators):
-                # Extract a snippet as a concern
-                concern_snippet = content[:150].strip()
-                if concern_snippet and len(key_concerns) < 3:
-                    key_concerns.append(concern_snippet + "..." if len(content) > 150 else concern_snippet)
-            
-            if any(ind in content_lower for ind in praise_indicators):
-                # Extract a snippet as praise
-                praise_snippet = content[:150].strip()
-                if praise_snippet and len(key_praises) < 3:
-                    key_praises.append(praise_snippet + "..." if len(content) > 150 else praise_snippet)
-        
-        # Overall sentiment analysis
-        combined_content = " ".join(all_content)
-        overall_sentiment, sentiment_score = _analyze_sentiment(combined_content)
-        
-        # Ensure we have some concerns/praises
-        if not key_concerns:
-            key_concerns = ["Limited user feedback found on specific pain points"]
-        if not key_praises:
-            key_praises = ["Topic generates discussion in relevant communities"]
-        
-        reddit_sentiment: RedditSentiment = {
-            "overall_sentiment": overall_sentiment,
-            "sentiment_score": sentiment_score,
-            "total_posts_analyzed": len(search_results),
-            "top_subreddits": list(subreddits_found)[:4],
-            "key_concerns": key_concerns[:3],
-            "key_praises": key_praises[:3],
-            "sample_posts": sample_posts[:3]
+        return [item.embedding for item in response.data]
+    except asyncio.TimeoutError:
+        log_timing("reddit", "Embedding batch timeout")
+        return [[] for _ in texts]
+    except Exception as e:
+        log_timing("reddit", f"Embedding batch error: {str(e)[:50]}")
+        return [[] for _ in texts]
+
+
+async def search_reddit(state: ValidationState) -> Dict[str, Any]:
+    """
+    Search Reddit for discussions about the startup idea.
+    
+    ASYNC OPTIMIZED:
+    - Concurrent query execution
+    - Batched embeddings
+    - 8s timeout per request
+    - Max 2 retries
+    """
+    timer = StepTimer("reddit")
+    
+    idea_input = state.get("idea_input", "")
+    processing_errors = list(state.get("processing_errors", []))
+    
+    if not idea_input:
+        return {
+            "reddit_sentiment": _insufficient_data_response(["no_idea_provided"]),
+            "processing_errors": processing_errors + ["Reddit: No idea provided"]
+        }
+    
+    try:
+        tavily_key, openai_key = _get_api_keys()
+    except ValueError as e:
+        return {
+            "reddit_sentiment": _insufficient_data_response([str(e)]),
+            "processing_errors": processing_errors + [f"Reddit: {str(e)}"]
+        }
+    
+    # Get global embedding and intent from state
+    idea_embedding = state.get("idea_embedding", [])
+    intent_keywords = state.get("intent_keywords", [])
+    
+    if not idea_embedding:
+        return {
+            "reddit_sentiment": _insufficient_data_response(["missing_idea_embedding"]),
+            "processing_errors": processing_errors + ["Reddit: Missing idea embedding"]
         }
         
-        logger.info(f"[Tavily/Reddit] Success: Found {len(search_results)} Reddit discussions.")
-        return {"reddit_sentiment": reddit_sentiment}
+    # Extract domain context using global intent keywords
+    domain_keywords = _extract_domain_context(idea_input, intent_keywords)
     
-    # Catch specific network-related exceptions
-    except socket.gaierror as dns_error:
-        logger.error(f"[Tavily/Reddit] DNS resolution failed: {dns_error}. Falling back to mock data.")
-        return {"reddit_sentiment": _get_mock_data(idea)}
+    # Generate search queries
+    queries = _generate_reddit_queries(idea_input, domain_keywords)
     
-    except ConnectionError as conn_error:
-        logger.error(f"[Tavily/Reddit] Connection error: {conn_error}. Falling back to mock data.")
-        return {"reddit_sentiment": _get_mock_data(idea)}
+    # Initialize clients
+    openai_client = AsyncOpenAI(api_key=openai_key)
     
-    except TimeoutError as timeout_error:
-        logger.error(f"[Tavily/Reddit] Request timeout: {timeout_error}. Falling back to mock data.")
-        return {"reddit_sentiment": _get_mock_data(idea)}
+    # Search Tavily CONCURRENTLY for all queries
+    async with timer.async_step("tavily_search"):
+        async with httpx.AsyncClient() as http_client:
+            search_tasks = [
+                _search_tavily_async(http_client, tavily_key, query)
+                for query in queries
+            ]
+            results_lists = await asyncio.gather(*search_tasks, return_exceptions=True)
     
-    except Exception as e:
-        # Categorize the error for detailed logging
-        error_category = _categorize_tavily_error(e)
-        logger.error(
-            f"[Tavily/Reddit] {error_category}. Falling back to mock data. "
-            f"Details: {type(e).__name__}: {str(e)[:200]}"
-        )
-        return {"reddit_sentiment": _get_mock_data(idea)}
+    # Flatten results
+    all_results = []
+    for result_list in results_lists:
+        if isinstance(result_list, list):
+            all_results.extend(result_list)
+    
+    # Deduplicate by URL
+    seen_urls = set()
+    unique_results = []
+    for result in all_results:
+        url = result.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_results.append(result)
+    
+    if not unique_results:
+        timer.summary()
+        return {
+            "reddit_sentiment": _insufficient_data_response(["no_reddit_results"]),
+            "processing_errors": processing_errors + ["Reddit: No results found"]
+        }
+    
+    # Process results and collect texts for batch embedding
+    async with timer.async_step("processing"):
+        candidate_posts = []
+        discarded_noise_count = 0
+        excluded_subreddit_count = 0
+        subreddit_counts: Dict[str, int] = {}
+        
+        for result in unique_results:
+            # Extract subreddit
+            url = result.get("url", "")
+            subreddit = ""
+            subreddit_match = re.search(r'reddit\.com/r/(\w+)', url)
+            if subreddit_match:
+                subreddit = subreddit_match.group(1)
+            
+            # Check for excluded subreddits
+            if _is_excluded_subreddit(subreddit):
+                excluded_subreddit_count += 1
+                continue
+            
+            # Extract and clean content
+            raw_content = result.get("raw_content") or result.get("content", "")
+            title = result.get("title", "")
+            
+            cleaned_content = _clean_text(raw_content)
+            cleaned_title = _clean_text(title)
+            
+            full_content = f"{cleaned_title} {cleaned_content}".strip()
+            
+            # Validate content quality
+            if len(full_content) < MIN_CONTENT_LENGTH:
+                discarded_noise_count += 1
+                continue
+            
+            # Check domain relevance (quick keyword check)
+            has_keyword_match = _has_domain_relevance(full_content, domain_keywords)
+            
+            candidate_posts.append({
+                "title": cleaned_title[:200],
+                "content": cleaned_content[:500],
+                "full_content": full_content[:2000],
+                "subreddit": subreddit,
+                "url": url,
+                "has_keyword_match": has_keyword_match
+            })
+            
+            # Track subreddit
+            if subreddit:
+                subreddit_counts[subreddit] = subreddit_counts.get(subreddit, 0) + 1
+    
+    if not candidate_posts:
+        timer.summary()
+        return {
+            "reddit_sentiment": _insufficient_data_response(["all_posts_filtered"]),
+            "processing_errors": processing_errors + ["Reddit: All posts filtered"]
+        }
+    
+    # BATCH embedding call for all candidate posts
+    async with timer.async_step("batch_embeddings"):
+        texts_to_embed = [p["full_content"] for p in candidate_posts]
+        embeddings = await _get_embeddings_batch(openai_client, texts_to_embed)
+    
+    # Calculate relevance and filter
+    async with timer.async_step("relevance_scoring"):
+        processed_posts = []
+        low_relevance_count = 0
+        
+        for i, post in enumerate(candidate_posts):
+            # Calculate base relevance
+            if embeddings[i]:
+                base_relevance = _cosine_similarity(idea_embedding, embeddings[i])
+            else:
+                base_relevance = 0.3
+            
+            # EPISTEMIC RIGOUR: Apply recency weighting
+            recency_weight = _calculate_recency_weight(post["full_content"])
+            
+            # EPISTEMIC RIGOUR: Check for transactional intent
+            is_transactional = _detect_transactional_intent(post["full_content"])
+            
+            # Calculate adjusted relevance
+            # 1. Penalize old content
+            relevance_score = base_relevance * recency_weight
+            
+            # 2. Boost for keyword match OR transactional signal
+            if post["has_keyword_match"] or is_transactional:
+                relevance_score = min(1.0, relevance_score + 0.15)
+            
+            # Filter by relevance
+            if relevance_score < RELEVANCE_THRESHOLD and not (post["has_keyword_match"] or is_transactional):
+                low_relevance_count += 1
+                continue
+            
+            # Analyze sentiment
+            polarity, subjectivity = _analyze_sentiment(post["full_content"])
+            
+            processed_posts.append({
+                "title": post["title"],
+                "content": post["content"],
+                "subreddit": post["subreddit"],
+                "relevance_score": round(relevance_score, 3),
+                "sentiment_score": round(polarity, 3),
+                "subjectivity": round(subjectivity, 3),
+                "url": post["url"]
+            })
+    
+    # Check if we have enough data
+    total_discarded = discarded_noise_count + excluded_subreddit_count + low_relevance_count
+    
+    if len(processed_posts) < 5:
+        timer.summary()
+        return {
+            "reddit_sentiment": _insufficient_data_response([
+                "low_sample_size",
+                f"only_{len(processed_posts)}_relevant_posts",
+                f"discarded_{total_discarded}_posts"
+            ]),
+            "processing_errors": processing_errors + ["Reddit: Insufficient relevant posts"]
+        }
+    
+    # Calculate sentiment metrics
+    weighted_sentiment, variance, uncertainty, conf_interval = _calculate_sentiment_metrics(processed_posts)
+    
+    # Determine overall sentiment
+    overall_sentiment = _classify_sentiment(weighted_sentiment)
+    
+    # Check for mixed signals
+    pos_count = sum(1 for p in processed_posts if p["sentiment_score"] > 0.1)
+    neg_count = sum(1 for p in processed_posts if p["sentiment_score"] < -0.1)
+    if pos_count >= 3 and neg_count >= 3:
+        overall_sentiment = "mixed"
+    
+    # Get top subreddits
+    top_subreddits = sorted(subreddit_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    top_subreddits = [f"r/{s[0]}" for s in top_subreddits if s[0]]
+    if not top_subreddits:
+        top_subreddits = ["r/various"]
+    
+    # Extract concerns and praises
+    key_concerns, key_praises = _extract_concerns_and_praises(processed_posts, domain_keywords)
+    
+    # Build sample posts
+    sample_posts: List[SamplePost] = []
+    for post in sorted(processed_posts, key=lambda x: x["relevance_score"], reverse=True)[:5]:
+        sample_posts.append({
+            "title": post["title"][:100],
+            "score": int(post["relevance_score"] * 100),
+            "sentiment": _classify_sentiment(post["sentiment_score"]),
+            "subreddit": post["subreddit"] or "unknown"
+        })
+    
+    # Calculate confidence
+    relevance_scores = [p["relevance_score"] for p in processed_posts]
+    relevance_mean = statistics.mean(relevance_scores) if relevance_scores else 0
+    
+    sample_factor = min(len(processed_posts) / MIN_SAMPLE_SIZE, 1.0)
+    noise_penalty = min(total_discarded / max(len(processed_posts), 1), 0.5)
+    confidence = sample_factor * relevance_mean * (1 - noise_penalty) * (1 - uncertainty * 0.5)
+    confidence = max(0.1, min(0.95, confidence))
+    
+    # Build warnings
+    warnings = []
+    if len(processed_posts) < MIN_SAMPLE_SIZE:
+        warnings.append("sample_size_below_target")
+    if total_discarded > len(processed_posts):
+        warnings.append("high_noise_ratio")
+    if variance > 0.3:
+        warnings.append("high_sentiment_variance")
+    if excluded_subreddit_count > 5:
+        warnings.append("many_off_domain_results")
+    if relevance_mean < 0.6:
+        warnings.append("low_average_relevance")
+    
+    quality: QualityMetrics = {
+        "data_volume": len(processed_posts),
+        "relevance_mean": round(relevance_mean, 3),
+        "confidence": round(confidence, 3),
+        "warnings": warnings
+    }
+    
+    reddit_sentiment: RedditSentiment = {
+        "overall_sentiment": overall_sentiment,
+        "sentiment_score": round(weighted_sentiment, 2),
+        "total_posts_analyzed": len(processed_posts),
+        "top_subreddits": top_subreddits,
+        "key_concerns": key_concerns,
+        "key_praises": key_praises,
+        "sample_posts": sample_posts,
+        "quality": quality
+    }
+    
+    timer.summary()
+    return {"reddit_sentiment": reddit_sentiment}
 
+
+def _insufficient_data_response(warnings: List[str]) -> RedditSentiment:
+    """Generate a standardized insufficient data response."""
+    return {
+        "overall_sentiment": "insufficient_data",
+        "sentiment_score": 0.0,
+        "total_posts_analyzed": 0,
+        "top_subreddits": [],
+        "key_concerns": ["Insufficient data for analysis"],
+        "key_praises": ["Insufficient data for analysis"],
+        "sample_posts": [],
+        "quality": {
+            "data_volume": 0,
+            "relevance_mean": 0.0,
+            "confidence": 0.0,
+            "warnings": warnings
+        }
+    }
