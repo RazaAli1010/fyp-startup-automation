@@ -87,24 +87,136 @@ class CompetitorAnalysisResponse(BaseModel):
     competitors_found: int = Field(..., ge=0)
     direct_competitors: list[CompetitorInfo]
     indirect_competitors: list[CompetitorInfo]
-    market_saturation: str = Field(
+    market_structure: dict = Field(
         ...,
-        description="Market saturation level: low, medium, high, or oversaturated"
+        description="Market structure classification with type, confidence, and evidence"
     )
     differentiation_opportunities: list[str]
     total_funding_in_space: str
 
+
+class RecommendationConditionResponse(BaseModel):
+    """
+    A single falsifiable condition for the recommendation.
+    
+    Each condition MUST be falsifiable, testable, and tied to a specific risk.
+    """
+    condition: str = Field(
+        ..., 
+        description="Falsifiable statement (e.g., 'If users prepay at ≥$5/hour')"
+    )
+    test_method: str = Field(
+        ..., 
+        description="How to verify (e.g., 'Run 2-week pilot in 3 cities')"
+    )
+    linked_risk: str = Field(
+        ..., 
+        description="Risk this addresses (e.g., 'demand_validation')"
+    )
+
+
+class ConditionalRecommendationResponse(BaseModel):
+    """
+    Structured recommendation with explicit conditions.
+    
+    Decision types:
+    - conditional_go: Core signals positive, 1-3 assumptions to validate
+    - experiment: Mixed signals, small tests required before commitment
+    - wait: Market/infrastructure not ready, timing risk dominates
+    - avoid: Structural barriers high, key assumptions unlikely/untestable
+    """
+    decision: str = Field(
+        ..., 
+        description="Decision: conditional_go, experiment, wait, or avoid"
+    )
+    conditions: list[RecommendationConditionResponse] = Field(
+        ..., 
+        min_length=2,
+        description="Minimum 2 falsifiable conditions required"
+    )
+    rationale: str = Field(
+        ..., 
+        description="Why this decision AND why it is conditional (not unconditional)"
+    )
+
+
+class UnknownResponse(BaseModel):
+    """
+    A claim or assumption that lacks direct evidence.
+    
+    REQUIRED: Every final output MUST include unknowns. Empty lists are NOT allowed.
+    """
+    claim: str = Field(
+        ...,
+        description="The uncertain claim (e.g., 'Users will pay for this service')"
+    )
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in claim (0.0-1.0), must be justified"
+    )
+    reason: str = Field(
+        ...,
+        description="Why this claim is uncertain or unsupported"
+    )
+    source: str = Field(
+        ...,
+        description="Analysis section this relates to (reddit, trends, competitors, economics)"
+    )
+    evidence_gap: str = Field(
+        ...,
+        description="What evidence would resolve this unknown"
+    )
+
+
+class KillCriterionResponse(BaseModel):
+    """
+    Explicit kill criterion that can terminate the idea.
+    
+    REQUIREMENT: Every criterion must be measurable and explicitly state when to STOP.
+    """
+    criterion: str = Field(
+        ...,
+        description="Kill criterion in 'If X fails → stop' format"
+    )
+    category: str = Field(
+        ...,
+        description="Category: user_side | supply_side | willingness_to_pay | unit_economics"
+    )
+    linked_unknown: str = Field(
+        ...,
+        description="Which unknown/assumption this criterion tests"
+    )
+    test_cost: str = Field(
+        ...,
+        description="Cost estimate: cheap (<$500) | moderate ($500-$5000) | expensive (>$5000)"
+    )
+    test_duration: str = Field(
+        ...,
+        description="Time estimate: fast (<1 week) | moderate (1-4 weeks) | slow (>4 weeks)"
+    )
+
+
 class FinalVerdictResponse(BaseModel):
-    """Final synthesized verdict with scoring."""
+    """
+    Final synthesized verdict with scoring.
+    
+    BREAKING CHANGES:
+    - recommendation is ConditionalRecommendationResponse (not string)
+    - action_items replaced by kill_criteria
+    
+    MANDATORY: unknowns and kill_criteria must be populated.
+    """
     overall_score: int = Field(
         ..., 
         ge=0, 
         le=100,
         description="Overall validation score (0-100)"
     )
-    recommendation: str = Field(
+    recommendation: ConditionalRecommendationResponse = Field(
         ...,
-        description="Recommendation: strong_go, go, caution, pivot, or no_go"
+        description="Conditional recommendation with decision, conditions, and rationale"
     )
     confidence: float = Field(
         ..., 
@@ -115,8 +227,17 @@ class FinalVerdictResponse(BaseModel):
     summary: str = Field(..., description="Human-readable summary")
     strengths: list[str]
     weaknesses: list[str]
-    action_items: list[str]
     risk_factors: list[str]
+    unknowns: list[UnknownResponse] = Field(
+        ...,
+        min_length=1,
+        description="MANDATORY list of uncertain claims - never empty"
+    )
+    kill_criteria: list[KillCriterionResponse] = Field(
+        ...,
+        min_length=2,
+        description="MANDATORY list of explicit stop conditions - replaces action_items"
+    )
 
 class ValidationResponse(BaseModel):
     """Complete response from the /validate endpoint."""
@@ -176,19 +297,62 @@ class ValidationResponse(BaseModel):
                     "competitors_found": 5,
                     "direct_competitors": [],
                     "indirect_competitors": [],
-                    "market_saturation": "medium",
+                    "market_structure": {
+                        "type": "fragmented",
+                        "confidence": 0.7,
+                        "evidence": ["Multiple small players, no dominant leader"]
+                    },
                     "differentiation_opportunities": ["Focus on SMB"],
                     "total_funding_in_space": "$200M+"
                 },
                 "final_verdict": {
                     "overall_score": 72,
-                    "recommendation": "go",
+                    "recommendation": {
+                        "decision": "conditional_go",
+                        "conditions": [
+                            {
+                                "condition": "If SMBs demonstrate willingness to pay $49+/month within 30-day trial",
+                                "test_method": "Run 30-day free trial with 50 SMBs, measure conversion to paid",
+                                "linked_risk": "demand_validation"
+                            },
+                            {
+                                "condition": "If content generation quality rated ≥4/5 by 80% of beta users",
+                                "test_method": "Survey beta users after 2 weeks of usage",
+                                "linked_risk": "product_quality"
+                            }
+                        ],
+                        "rationale": "Core signals positive (rising demand, positive sentiment) but unproven monetization in SMB segment requires validation before scaling"
+                    },
                     "confidence": 0.78,
                     "summary": "Promising opportunity with manageable competition",
                     "strengths": ["Growing market"],
                     "weaknesses": ["Established players"],
-                    "action_items": ["Conduct interviews"],
-                    "risk_factors": ["CAC may be high"]
+                    "risk_factors": ["CAC may be high"],
+                    "unknowns": [
+                        {
+                            "claim": "SMBs will pay for this solution",
+                            "confidence": 0.35,
+                            "reason": "No pricing experiments conducted",
+                            "source": "business_model",
+                            "evidence_gap": "Run pricing experiment with 50 SMBs"
+                        }
+                    ],
+                    "kill_criteria": [
+                        {
+                            "criterion": "If <20% of trial SMBs convert to paid → stop",
+                            "category": "willingness_to_pay",
+                            "linked_unknown": "SMBs will pay for this solution",
+                            "test_cost": "moderate",
+                            "test_duration": "moderate"
+                        },
+                        {
+                            "criterion": "If content quality rated <4/5 by 80% of users → stop",
+                            "category": "user_side",
+                            "linked_unknown": "Content quality meets expectations",
+                            "test_cost": "cheap",
+                            "test_duration": "fast"
+                        }
+                    ]
                 },
                 "processing_errors": []
             }
