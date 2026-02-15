@@ -15,7 +15,7 @@ from .prompts import SYSTEM_PROMPT, PROMPT_BUILDERS
 from .rules import resolve_jurisdiction, validate_document_type
 from .schema import LegalDocumentOutput
 
-
+#legal document generator
 _LEGAL_MAX_TOKENS = 4000
 _MANDATORY_DISCLAIMER = (
     "This document is generated for informational purposes only "
