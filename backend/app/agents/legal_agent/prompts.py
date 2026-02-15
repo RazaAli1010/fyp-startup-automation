@@ -68,7 +68,7 @@ REQUIREMENTS:
 - Professional tone appropriate for {jurisdiction}
 - Dispute resolution clause referencing {governing_law}{gdpr_note}
 
-Generate the complete NDA as a JSON object with sections array."""
+Generate the complete NDA as a JSON object with sections arrays."""
 
 
 def build_founder_agreement_prompt(
