@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { RouteGuard } from "@/components/auth/route-guard";
+import { BackButton } from "@/components/ui/back-button";
 import type { MVPReportRecord, MVPBlueprintResponse } from "@/lib/types";
 
 type Status = "idle" | "loading" | "generating" | "success" | "error";
@@ -185,8 +186,10 @@ function MVPContent() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+      <BackButton fallback="/dashboard" />
+
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 mt-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-orange-400">
@@ -227,39 +230,102 @@ function MVPContent() {
         </div>
       </div>
 
-      {/* ── Core Hypothesis ─────────────────────────────────── */}
-      <div className="mb-8 rounded-xl border border-white/10 bg-white/[0.02] p-5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-orange-400">
-          Core Hypothesis
-        </p>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          {bp.core_hypothesis}
-        </p>
-      </div>
-
-      {/* ── Primary User ────────────────────────────────────── */}
-      <div className="mb-8 rounded-xl border border-white/10 bg-white/[0.02] p-5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-          Primary User
-        </p>
-        <p className="mt-2 text-sm text-slate-300">{bp.primary_user}</p>
+      {/* ── Core Hypothesis + Primary User ─────────────────── */}
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="relative overflow-hidden rounded-xl border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500/10">
+              <svg
+                className="h-3.5 w-3.5 text-orange-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
+                />
+              </svg>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-orange-400">
+              Core Hypothesis
+            </p>
+          </div>
+          <p className="text-sm leading-relaxed text-slate-300">
+            {bp.core_hypothesis}
+          </p>
+        </div>
+        <div className="relative overflow-hidden rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-transparent p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
+              <svg
+                className="h-3.5 w-3.5 text-amber-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                />
+              </svg>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+              Primary User
+            </p>
+          </div>
+          <p className="text-sm leading-relaxed text-slate-300">
+            {bp.primary_user}
+          </p>
+        </div>
       </div>
 
       {/* ── Core Features ───────────────────────────────────── */}
       <div className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold text-slate-100">
-          Core Features
-        </h2>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10">
+            <svg
+              className="h-4 w-4 text-indigo-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-slate-100">
+            Core Features
+          </h2>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {bp.core_features.map((feat, idx) => (
             <div
               key={idx}
-              className="rounded-xl border border-white/10 bg-white/[0.02] p-4"
+              className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all duration-200 hover:border-indigo-500/20 hover:bg-white/[0.04]"
             >
-              <p className="text-sm font-semibold text-slate-100">
-                {feat.name}
-              </p>
-              <p className="mt-1 text-xs text-slate-500">{feat.description}</p>
+              <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 transition-opacity group-hover:opacity-100" />
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/10 text-xs font-bold text-indigo-400">
+                  {idx + 1}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-100">
+                    {feat.name}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    {feat.description}
+                  </p>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -303,19 +369,36 @@ function MVPContent() {
 
       {/* ── Tech Stack ──────────────────────────────────────── */}
       <div className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold text-slate-100">
-          Recommended Tech Stack
-        </h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/10">
+            <svg
+              className="h-4 w-4 text-cyan-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-slate-100">
+            Recommended Tech Stack
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {Object.entries(bp.recommended_tech_stack).map(([key, value]) => (
             <div
               key={key}
-              className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2"
+              className="rounded-xl border border-cyan-500/10 bg-cyan-500/5 px-4 py-3 transition-all duration-200 hover:border-cyan-500/20"
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">
                 {key}
               </p>
-              <p className="mt-0.5 text-sm text-slate-300">{value}</p>
+              <p className="mt-1 text-sm font-medium text-slate-200">{value}</p>
             </div>
           ))}
         </div>
@@ -323,31 +406,60 @@ function MVPContent() {
 
       {/* ── Build Plan ──────────────────────────────────────── */}
       <div className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold text-slate-100">
-          Build Plan
-          <span className="ml-2 text-sm font-normal text-slate-500">
-            ~{bp.build_plan.total_estimated_weeks} weeks ·{" "}
-            {bp.build_plan.team_size} team member(s)
+        <div className="flex items-center gap-2 mb-1">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10">
+            <svg
+              className="h-4 w-4 text-purple-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
+              />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-slate-100">Build Plan</h2>
+        </div>
+        <div className="mb-4 flex items-center gap-4 pl-10">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 px-3 py-1 text-xs font-semibold text-purple-300">
+            ~{bp.build_plan.total_estimated_weeks} weeks
           </span>
-        </h2>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-3 py-1 text-xs font-semibold text-indigo-300">
+            {bp.build_plan.team_size} team member
+            {bp.build_plan.team_size > 1 ? "s" : ""}
+          </span>
+        </div>
         <div className="space-y-3">
           {bp.build_plan.phases.map((phase, i) => (
             <div
               key={i}
-              className="rounded-xl border border-white/10 bg-white/[0.02] p-4"
+              className="relative rounded-xl border border-white/10 bg-white/[0.02] p-4 pl-5"
             >
+              <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl bg-gradient-to-b from-purple-500 to-indigo-500" />
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-100">
-                  {phase.phase}
-                </p>
-                <span className="rounded-md bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-400">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-purple-500/10 text-xs font-bold text-purple-400">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm font-semibold text-slate-100">
+                    {phase.phase}
+                  </p>
+                </div>
+                <span className="rounded-full bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-400">
                   {phase.duration}
                 </span>
               </div>
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-2 ml-8 space-y-1">
                 {phase.tasks.map((task, j) => (
-                  <li key={j} className="flex gap-2 text-xs text-slate-500">
-                    <span className="shrink-0 text-indigo-500/60">-</span>
+                  <li
+                    key={j}
+                    className="flex items-start gap-2 text-xs text-slate-400"
+                  >
+                    <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-purple-400/60" />
                     {task}
                   </li>
                 ))}
@@ -408,16 +520,36 @@ function MVPContent() {
       {/* ── Risk Notes ──────────────────────────────────────── */}
       {bp.risk_notes.length > 0 && (
         <div className="mb-8">
-          <h2 className="mb-4 text-lg font-semibold text-slate-100">
-            Risk Notes
-          </h2>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
+              <svg
+                className="h-4 w-4 text-amber-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-100">Risk Notes</h2>
+          </div>
           <div className="space-y-2">
             {bp.risk_notes.map((note, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3"
+                className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3"
               >
-                <p className="text-xs text-amber-400/80">{note}</p>
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/10 text-[10px] font-bold text-amber-400">
+                  {i + 1}
+                </span>
+                <p className="text-sm leading-relaxed text-amber-400/80">
+                  {note}
+                </p>
               </div>
             ))}
           </div>

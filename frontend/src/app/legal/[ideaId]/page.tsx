@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { GatingModal } from "@/components/ui/gating-modal";
 import { RouteGuard } from "@/components/auth/route-guard";
+import { BackButton } from "@/components/ui/back-button";
 import type { LegalDocumentRecord, LegalDocumentResponse } from "@/lib/types";
 
 type Status = "idle" | "loading" | "generating" | "success" | "error";
@@ -127,8 +128,10 @@ function LegalContent() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
+      <BackButton fallback="/dashboard" />
+
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-8 mt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-emerald-400">
           Legal Documents
         </p>
@@ -211,68 +214,196 @@ function LegalContent() {
       {/* Document display */}
       {doc && selectedDoc ? (
         <div className="space-y-6">
-          {/* Document header */}
-          <Card>
-            <CardContent className="py-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-50">
-                    {doc.document_type}
-                  </h2>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
-                      {doc.jurisdiction}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
-                      {doc.governing_law}
-                    </span>
-                  </div>
+          {/* Document header + Download */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-50">
+                  {doc.document_type
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                </h2>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
+                    <svg
+                      className="h-3 w-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
+                      />
+                    </svg>
+                    {doc.jurisdiction}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-xs font-medium text-indigo-300">
+                    <svg
+                      className="h-3 w-3"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 01-2.031.352 5.988 5.988 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L18.75 4.971zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.59-1.202L5.25 4.971z"
+                      />
+                    </svg>
+                    {doc.governing_law}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusBadge(selectedDoc.status)}`}
+                  >
+                    {selectedDoc.status}
+                  </span>
                 </div>
-                <span
-                  className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold ${statusBadge(selectedDoc.status)}`}
-                >
-                  {selectedDoc.status}
-                </span>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Disclaimer */}
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-            <p className="text-xs font-medium text-amber-400">
-              {doc.disclaimer}
-            </p>
+              <button
+                onClick={() => {
+                  const printArea = document.getElementById("legal-doc-print");
+                  if (!printArea) return;
+                  const w = window.open("", "_blank");
+                  if (!w) return;
+                  w.document.write(
+                    `<html><head><title>${doc.document_type}</title><style>body{font-family:Georgia,serif;max-width:800px;margin:40px auto;padding:0 20px;color:#1e293b;line-height:1.8}h1{font-size:24px;margin-bottom:8px}h2{font-size:18px;margin-top:28px;margin-bottom:8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}.meta{color:#64748b;font-size:13px;margin-bottom:24px}.disclaimer{background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:12px 16px;font-size:13px;color:#92400e;margin-bottom:24px}.section{margin-bottom:20px}.notes{background:#f8fafc;border-radius:8px;padding:16px;margin-top:24px}.notes h3{font-size:14px;font-weight:600;margin-bottom:8px}.notes li{font-size:13px;margin-bottom:4px;color:#475569}@media print{body{margin:20px}}</style></head><body>`,
+                  );
+                  w.document.write(
+                    `<h1>${doc.document_type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}</h1>`,
+                  );
+                  w.document.write(
+                    `<div class="meta">${doc.jurisdiction} &middot; ${doc.governing_law}</div>`,
+                  );
+                  w.document.write(
+                    `<div class="disclaimer">${doc.disclaimer}</div>`,
+                  );
+                  doc.sections.forEach((s, idx) => {
+                    w.document.write(
+                      `<div class="section"><h2>${idx + 1}. ${s.title}</h2><p>${s.content.replace(/\n/g, "<br/>")}</p></div>`,
+                    );
+                  });
+                  if (doc.customization_notes.length > 0) {
+                    w.document.write(
+                      `<div class="notes"><h3>Customization Notes</h3><ul>${doc.customization_notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>`,
+                    );
+                  }
+                  if (doc.legal_risk_notes.length > 0) {
+                    w.document.write(
+                      `<div class="notes"><h3>Legal Risk Notes</h3><ul>${doc.legal_risk_notes.map((n) => `<li>${n}</li>`).join("")}</ul></div>`,
+                    );
+                  }
+                  w.document.write(`</body></html>`);
+                  w.document.close();
+                  setTimeout(() => {
+                    w.print();
+                  }, 300);
+                }}
+                className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all hover:shadow-emerald-500/40 hover:brightness-110 hover:scale-[1.02]"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                  />
+                </svg>
+                Download PDF
+              </button>
+            </div>
           </div>
 
-          {/* Sections */}
-          <div className="space-y-4">
+          {/* Disclaimer */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-4">
+            <div className="flex items-start gap-3">
+              <svg
+                className="mt-0.5 h-4 w-4 shrink-0 text-amber-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                />
+              </svg>
+              <p className="text-sm leading-relaxed text-amber-300/90">
+                {doc.disclaimer}
+              </p>
+            </div>
+          </div>
+
+          {/* Document body — printable area */}
+          <div
+            id="legal-doc-print"
+            className="rounded-2xl border border-white/10 bg-[#0c1222] p-6 sm:p-8"
+          >
             {doc.sections.map((section, i) => (
-              <Card key={i}>
-                <CardContent className="py-5">
-                  <h3 className="mb-3 text-base font-semibold text-slate-100">
-                    {section.title}
-                  </h3>
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-400">
-                    {section.content}
-                  </div>
-                </CardContent>
-              </Card>
+              <div
+                key={i}
+                className={`${i > 0 ? "mt-8 border-t border-white/5 pt-8" : ""}`}
+              >
+                <h3
+                  className="mb-4 flex items-center gap-3 text-lg font-bold text-slate-100"
+                  style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-xs font-bold text-emerald-400">
+                    {i + 1}
+                  </span>
+                  {section.title}
+                </h3>
+                <div
+                  className="whitespace-pre-wrap text-base leading-[1.85] text-slate-300/90"
+                  style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+                >
+                  {section.content}
+                </div>
+              </div>
             ))}
           </div>
 
           {/* Customization notes */}
           {doc.customization_notes.length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
-              <h3 className="mb-3 text-sm font-semibold text-slate-100">
+            <div className="rounded-xl border border-indigo-500/10 bg-indigo-500/5 p-5">
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-100">
+                <svg
+                  className="h-4 w-4 text-indigo-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M11.42 15.17l-5.59-5.59a2.002 2.002 0 010-2.83l.81-.81a2.002 2.002 0 012.83 0L12 8.47l2.53-2.53a2.002 2.002 0 012.83 0l.81.81a2.002 2.002 0 010 2.83l-5.59 5.59a.996.996 0 01-1.41 0z"
+                  />
+                </svg>
                 Customization Notes
               </h3>
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {doc.customization_notes.map((note, i) => (
                   <li
                     key={i}
-                    className="flex items-start gap-2 text-xs text-slate-400"
+                    className="flex items-start gap-2.5 text-sm leading-relaxed text-slate-400"
                   >
-                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />
                     {note}
                   </li>
                 ))}
@@ -283,16 +414,29 @@ function LegalContent() {
           {/* Legal risk notes */}
           {doc.legal_risk_notes.length > 0 && (
             <div className="rounded-xl border border-amber-500/10 bg-amber-500/5 p-5">
-              <h3 className="mb-3 text-sm font-semibold text-amber-300">
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-300">
+                <svg
+                  className="h-4 w-4 text-amber-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                  />
+                </svg>
                 Legal Risk Notes
               </h3>
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {doc.legal_risk_notes.map((note, i) => (
                   <li
                     key={i}
-                    className="flex items-start gap-2 text-xs text-amber-400/80"
+                    className="flex items-start gap-2.5 text-sm leading-relaxed text-amber-400/80"
                   >
-                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                     {note}
                   </li>
                 ))}

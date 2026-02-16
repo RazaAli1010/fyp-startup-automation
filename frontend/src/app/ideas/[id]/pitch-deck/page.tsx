@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { RouteGuard } from "@/components/auth/route-guard";
+import { BackButton } from "@/components/ui/back-button";
 import type { PitchDeckRecord } from "@/lib/types";
 
 type Status = "idle" | "loading" | "generating" | "success" | "error";
@@ -185,8 +186,10 @@ function PitchDeckContent() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <BackButton fallback="/dashboard" />
+
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 mt-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-purple-400">

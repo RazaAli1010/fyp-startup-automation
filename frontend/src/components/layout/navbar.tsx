@@ -16,10 +16,7 @@ export function Navbar() {
   return (
     <header className="fixed top-0 z-50 w-full border-b border-white/[0.06] bg-[#020617]/80 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <Link
-          href={user ? "/dashboard" : "/"}
-          className="flex items-center gap-2.5 group"
-        >
+        <Link href="/" className="flex items-center gap-2.5 group">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/20 transition-shadow group-hover:shadow-indigo-500/40">
             <span className="text-xs font-bold text-white">S</span>
           </div>

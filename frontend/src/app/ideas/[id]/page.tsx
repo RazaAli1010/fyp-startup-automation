@@ -20,6 +20,7 @@ import { ScoreExplainer } from "@/components/report/ScoreExplainer";
 import { SignalExplainer } from "@/components/report/SignalExplainer";
 import { FINAL_SCORE_FORMULA } from "@/lib/scoring_explanations";
 import { RouteGuard } from "@/components/auth/route-guard";
+import { BackButton } from "@/components/ui/back-button";
 import type {
   IdeaEvaluationReport,
   ModuleScores,
@@ -225,8 +226,10 @@ function EvaluationContent() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
+      <BackButton fallback="/dashboard" />
+
       {/* Header */}
-      <div className="mb-10">
+      <div className="mb-10 mt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-indigo-400">
           Evaluation Report
         </p>

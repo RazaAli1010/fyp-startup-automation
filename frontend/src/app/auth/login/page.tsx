@@ -13,7 +13,11 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { user, login } = useAuth();
+
+  useEffect(() => {
+    if (user) router.replace("/dashboard");
+  }, [user, router]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

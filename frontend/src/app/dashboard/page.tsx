@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getDashboard } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,10 @@ import type { DashboardResponse } from "@/lib/types";
 
 function DashboardContent() {
   const { user } = useAuth();
+  const router = useRouter();
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -268,6 +271,266 @@ function DashboardContent() {
           ))}
         </div>
       )}
+
+      {/* ── Agent Hub ──────────────────────────────────────────── */}
+      {ideas.length > 0 &&
+        (() => {
+          const activeIdea = selectedIdeaId
+            ? ideas.find((i) => i.id === selectedIdeaId)
+            : ideas[0];
+          if (!activeIdea) return null;
+
+          const isValidated = activeIdea.final_viability_score != null;
+          const hasMR = marketResearch.some(
+            (r) => r.idea_id === activeIdea.id && r.status === "completed",
+          );
+          const hasPD = pitchDecks.some(
+            (d) => d.idea_id === activeIdea.id && d.status === "completed",
+          );
+          const hasMVP = mvpReports.some(
+            (m) => m.idea_id === activeIdea.id && m.status === "generated",
+          );
+          const hasLegal = legalDocuments.some(
+            (l) => l.idea_id === activeIdea.id && l.status === "generated",
+          );
+
+          const agents = [
+            {
+              key: "validation",
+              label: "Idea Validation",
+              desc: "AI-powered viability scoring",
+              icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+              color: "indigo",
+              enabled: true,
+              done: isValidated,
+              href: `/ideas/${activeIdea.id}`,
+              tooltip: "",
+            },
+            {
+              key: "research",
+              label: "Market Research",
+              desc: "TAM, SAM, SOM analysis",
+              icon: "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z",
+              color: "teal",
+              enabled: isValidated,
+              done: hasMR,
+              href: `/market-research/${activeIdea.id}`,
+              tooltip: !isValidated ? "Validate idea first" : "",
+            },
+            {
+              key: "pitch",
+              label: "Pitch Deck",
+              desc: "Investor-ready presentation",
+              icon: "M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5",
+              color: "purple",
+              enabled: isValidated,
+              done: hasPD,
+              href: `/ideas/${activeIdea.id}/pitch-deck`,
+              tooltip: !isValidated ? "Validate idea first" : "",
+            },
+            {
+              key: "mvp",
+              label: "MVP Generator",
+              desc: "Build plan & tech stack",
+              icon: "M11.42 15.17l-5.59-5.59a2.002 2.002 0 010-2.83l.81-.81a2.002 2.002 0 012.83 0L12 8.47l2.53-2.53a2.002 2.002 0 012.83 0l.81.81a2.002 2.002 0 010 2.83l-5.59 5.59a.996.996 0 01-1.41 0z",
+              color: "orange",
+              enabled: isValidated && hasMR,
+              done: hasMVP,
+              href: `/mvp/${activeIdea.id}`,
+              tooltip: !isValidated
+                ? "Validate idea first"
+                : !hasMR
+                  ? "Complete market research first"
+                  : "",
+            },
+            {
+              key: "legal",
+              label: "Legal Generator",
+              desc: "NDAs, agreements & more",
+              icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
+              color: "emerald",
+              enabled: isValidated,
+              done: hasLegal,
+              href: `/legal/${activeIdea.id}`,
+              tooltip: !isValidated ? "Validate idea first" : "",
+            },
+            {
+              key: "chat",
+              label: "AI Co-Founder",
+              desc: "Strategic Q&A chat",
+              icon: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z",
+              color: "cyan",
+              enabled: isValidated,
+              done: false,
+              href: `/chat/${activeIdea.id}`,
+              tooltip: !isValidated ? "Validate idea first" : "",
+            },
+          ];
+
+          const colorMap: Record<
+            string,
+            {
+              bg: string;
+              text: string;
+              border: string;
+              shadow: string;
+              gradient: string;
+            }
+          > = {
+            indigo: {
+              bg: "bg-indigo-500/10",
+              text: "text-indigo-400",
+              border: "border-indigo-500/30",
+              shadow: "shadow-indigo-500/10",
+              gradient: "from-indigo-500 to-indigo-600",
+            },
+            teal: {
+              bg: "bg-teal-500/10",
+              text: "text-teal-400",
+              border: "border-teal-500/30",
+              shadow: "shadow-teal-500/10",
+              gradient: "from-teal-500 to-teal-600",
+            },
+            purple: {
+              bg: "bg-purple-500/10",
+              text: "text-purple-400",
+              border: "border-purple-500/30",
+              shadow: "shadow-purple-500/10",
+              gradient: "from-purple-500 to-purple-600",
+            },
+            orange: {
+              bg: "bg-orange-500/10",
+              text: "text-orange-400",
+              border: "border-orange-500/30",
+              shadow: "shadow-orange-500/10",
+              gradient: "from-orange-500 to-orange-600",
+            },
+            emerald: {
+              bg: "bg-emerald-500/10",
+              text: "text-emerald-400",
+              border: "border-emerald-500/30",
+              shadow: "shadow-emerald-500/10",
+              gradient: "from-emerald-500 to-emerald-600",
+            },
+            cyan: {
+              bg: "bg-cyan-500/10",
+              text: "text-cyan-400",
+              border: "border-cyan-500/30",
+              shadow: "shadow-cyan-500/10",
+              gradient: "from-cyan-500 to-cyan-600",
+            },
+          };
+
+          return (
+            <div className="mb-10 mt-10">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-100">
+                    Agent Hub
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Tools for{" "}
+                    <span className="font-medium text-slate-300">
+                      {activeIdea.startup_name}
+                    </span>
+                  </p>
+                </div>
+                {ideas.length > 1 && (
+                  <select
+                    value={activeIdea.id}
+                    onChange={(e) => setSelectedIdeaId(e.target.value)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500/50"
+                  >
+                    {ideas.map((idea) => (
+                      <option
+                        key={idea.id}
+                        value={idea.id}
+                        className="bg-[#0f172a]"
+                      >
+                        {idea.startup_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {agents.map((agent) => {
+                  const c = colorMap[agent.color];
+                  return (
+                    <div key={agent.key} className="relative group">
+                      <button
+                        disabled={!agent.enabled}
+                        onClick={() => router.push(agent.href)}
+                        className={`relative w-full flex flex-col items-center gap-3 rounded-xl border p-5 transition-all duration-200 ${
+                          agent.enabled
+                            ? `border-white/10 bg-white/[0.02] hover:${c.border} hover:bg-white/[0.05] hover:-translate-y-1 hover:shadow-lg hover:${c.shadow} cursor-pointer`
+                            : "border-white/5 bg-white/[0.01] opacity-50 cursor-not-allowed"
+                        }`}
+                      >
+                        {agent.done && (
+                          <span className="absolute top-2.5 right-2.5 flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                          </span>
+                        )}
+                        <div
+                          className={`flex h-11 w-11 items-center justify-center rounded-xl ${agent.enabled ? c.bg : "bg-slate-500/10"} transition-transform duration-200 ${agent.enabled ? "group-hover:scale-110" : ""}`}
+                        >
+                          <svg
+                            className={`h-5 w-5 ${agent.enabled ? c.text : "text-slate-600"}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={1.5}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d={agent.icon}
+                            />
+                          </svg>
+                        </div>
+                        <div className="text-center">
+                          <p
+                            className={`text-sm font-semibold ${agent.enabled ? "text-slate-100" : "text-slate-500"}`}
+                          >
+                            {agent.label}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {agent.desc}
+                          </p>
+                        </div>
+                        {agent.done && (
+                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                            Completed
+                          </span>
+                        )}
+                        {!agent.enabled && (
+                          <span className="rounded-full bg-slate-500/10 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                            Locked
+                          </span>
+                        )}
+                        {agent.enabled && !agent.done && (
+                          <span
+                            className={`rounded-full bg-gradient-to-r ${c.gradient} px-3 py-0.5 text-[10px] font-semibold text-white shadow-sm`}
+                          >
+                            Launch
+                          </span>
+                        )}
+                      </button>
+                      {agent.tooltip && !agent.enabled && (
+                        <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-300 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 z-10">
+                          {agent.tooltip}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
       {/* ── Pitch Deck History ─────────────────────────────────── */}
       <div className="mb-5 mt-10 flex items-center justify-between">
