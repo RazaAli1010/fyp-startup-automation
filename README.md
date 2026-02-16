@@ -116,6 +116,7 @@ Idea Validation Agent  (required by all downstream agents)
 **Purpose:** Evaluate a startup idea's viability by collecting real market signals from multiple independent sources and producing a transparent, scored assessment.
 
 **Inputs:**
+
 - Structured idea fields: startup name, description, industry, target customer type, geography, revenue model, pricing estimate, team size, technical complexity, regulatory risk.
 
 **Core Logic:**
@@ -149,6 +150,7 @@ The agent is implemented as a LangGraph `StateGraph` with four nodes:
 **Purpose:** Produce a quantified market analysis (TAM, SAM, SOM) grounded in real research data, competitor intelligence, and constrained LLM reasoning.
 
 **Inputs:**
+
 - Validated idea fields (from Idea Validation)
 - Industry, geography, target customer type, pricing estimate, description
 
@@ -178,10 +180,12 @@ Orchestrated as a five-step pipeline:
 **Purpose:** Generate an investor-ready presentation deck from validated idea data and evaluation scores.
 
 **Inputs:**
+
 - Idea context: name, description, industry, target customer, geography, revenue model, pricing, team size
 - Validation context: final score, verdict, risk level, key strength/risk, all five module scores
 
 **Core Logic:**
+
 1. Builds a structured input text combining idea details and validation results.
 2. Calls the Alai Slides API (`POST /generations`) with the input text and deck title.
 3. Polls the generation endpoint until completion.
@@ -202,6 +206,7 @@ The agent does not generate slide content locally -- it delegates entirely to th
 **Purpose:** Produce a complete, actionable MVP blueprint using deterministic rules -- no LLM, no randomness.
 
 **Inputs:**
+
 - Validated idea fields (startup name, industry, target customer, geography, revenue model, pricing, team size, tech complexity, regulatory risk)
 - Evaluation scores (all five module scores + final viability score)
 - Market research confidence level and competitor data
@@ -231,12 +236,14 @@ A pure rule-based engine with composable decision functions:
 **Purpose:** Generate jurisdiction-aware startup legal documents using OpenAI with structured JSON output.
 
 **Inputs:**
+
 - Document type (NDA, Founder Agreement, Privacy Policy, Terms of Service)
 - Company name, industry, geography
 - Founder count (for Founder Agreements)
 - Effective date (auto-generated if not provided)
 
 **Core Logic:**
+
 1. **Jurisdiction Resolution** -- Maps geography to governing law clause (e.g., "Laws of the State of Delaware, United States") and detects GDPR compliance requirements for EU/UK countries. Deterministic, rule-based.
 2. **Prompt Construction** -- Selects a document-type-specific prompt builder that injects company details, jurisdiction, governing law, and GDPR clauses (where required).
 3. **OpenAI Generation** -- Calls GPT-4.1 with a legal drafter system prompt and `response_format: json_object`. The system prompt enforces a strict JSON schema with sections array, disclaimer, and risk notes.
@@ -246,6 +253,7 @@ A pure rule-based engine with composable decision functions:
 **Outputs:** `LegalDocumentOutput` containing document type, jurisdiction, governing law, mandatory disclaimer, ordered sections, customization notes, legal risk notes, and generation timestamp.
 
 **Supported Document Types:**
+
 - Non-Disclosure Agreement (NDA)
 - Founder Agreement
 - Privacy Policy
@@ -261,29 +269,29 @@ A pure rule-based engine with composable decision functions:
 
 ### Backend
 
-| Component | Technology |
-|-----------|-----------|
-| Framework | FastAPI 0.115 |
-| ORM | SQLAlchemy 2.0 |
-| Database | SQLite (development), PostgreSQL (production-ready) |
-| LLM | OpenAI GPT-4.1 (via centralized client) |
-| Agent Orchestration | LangGraph (Idea Validation pipeline) |
-| Validation | Pydantic 2.10 |
-| Authentication | JWT (python-jose), bcrypt, Google OAuth 2.0 |
-| HTTP Client | httpx, requests |
-| External APIs | Tavily (research), SerpAPI (Google Trends), Exa (semantic search), Alai Slides (pitch decks) |
+| Component           | Technology                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| Framework           | FastAPI 0.115                                                                                |
+| ORM                 | SQLAlchemy 2.0                                                                               |
+| Database            | SQLite (development), PostgreSQL (production-ready)                                          |
+| LLM                 | OpenAI GPT-4.1 (via centralized client)                                                      |
+| Agent Orchestration | LangGraph (Idea Validation pipeline)                                                         |
+| Validation          | Pydantic 2.10                                                                                |
+| Authentication      | JWT (python-jose), bcrypt, Google OAuth 2.0                                                  |
+| HTTP Client         | httpx, requests                                                                              |
+| External APIs       | Tavily (research), SerpAPI (Google Trends), Exa (semantic search), Alai Slides (pitch decks) |
 
 ### Frontend
 
-| Component | Technology |
-|-----------|-----------|
-| Framework | Next.js 16 (App Router) |
-| Language | TypeScript 5 |
-| UI Library | React 19 |
-| Styling | Tailwind CSS 4 |
-| Fonts | Geist Sans, Geist Mono |
-| State Management | React Context (AuthProvider) |
-| Components | Custom component library (Button, Card, Spinner, GatingModal, InfoTooltip, etc.) |
+| Component        | Technology                                                                       |
+| ---------------- | -------------------------------------------------------------------------------- |
+| Framework        | Next.js 16 (App Router)                                                          |
+| Language         | TypeScript 5                                                                     |
+| UI Library       | React 19                                                                         |
+| Styling          | Tailwind CSS 4                                                                   |
+| Fonts            | Geist Sans, Geist Mono                                                           |
+| State Management | React Context (AuthProvider)                                                     |
+| Components       | Custom component library (Button, Card, Spinner, GatingModal, InfoTooltip, etc.) |
 
 ---
 
@@ -490,7 +498,7 @@ This project was developed as a Final Year Project (FYP) in Computer Science / S
 
 - **AI transparency** -- The system clearly separates deterministic scoring (fully explainable) from LLM-generated content (marked as AI-generated). Legal documents carry a mandatory disclaimer.
 - **No fabricated data** -- Market research reasoning is grounded in Tavily research text. The system prompt explicitly instructs the LLM to use null values when data is insufficient rather than inventing numbers.
-- **Legal responsibility** -- All generated legal documents include the disclaimer: *"This document is generated for informational purposes only and does not constitute legal advice."*
+- **Legal responsibility** -- All generated legal documents include the disclaimer: _"This document is generated for informational purposes only and does not constitute legal advice."_
 - **API key security** -- All secrets are read from environment variables and excluded from version control via `.gitignore`.
 
 ---
