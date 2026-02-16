@@ -1,0 +1,65 @@
+# =============================================================================
+# StartBot — Docker Compose (Production-Grade)
+# =============================================================================
+# Usage:
+#   docker-compose up --build
+#
+# Frontend: http://localhost:3000
+# Backend:  http://localhost:8000/docs
+# =============================================================================
+
+services:
+  # ── Backend (FastAPI) ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: startbot-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - DATABASE_URL=sqlite:///./data/startbot.db
+      - HOST=0.0.0.0
+      - PORT=8000
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - backend-data:/app/data
+    networks:
+      - startbot-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Frontend (Next.js) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+        - NEXT_PUBLIC_APP_NAME=StartBot
+    container_name: startbot-frontend
+    ports:
+      - "3000:3000"
+    networks:
+      - startbot-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ── Volumes ───────────────────────────────────────────────────────────────
+volumes:
+  backend-data:
+    driver: local
+
+# ── Networks ──────────────────────────────────────────────────────────────
+networks:
+  startbot-network:
+    driver: bridge
