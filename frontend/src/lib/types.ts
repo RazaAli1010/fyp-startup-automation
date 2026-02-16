@@ -303,3 +303,17 @@ export interface DashboardResponse {
   mvp_reports: UserDashboardMVP[];
   legal_documents: UserDashboardLegal[];
 }
+
+// ── AI Chat Co-Founder ──────────────────────────────────────
+
+export interface ChatResponse {
+  answer: string;
+  sources: string[];
+  indexed_agents: string[];
+}
+
+export interface ChatStatusResponse {
+  idea_id: string;
+  indexed_agents: string[];
+  ready: boolean;
+}

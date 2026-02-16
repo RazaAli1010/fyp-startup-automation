@@ -30,6 +30,7 @@ from ..services.trend_agent import fetch_trend_demand_signals
 from ..services.competitor_agent import fetch_competitor_signals
 from ..services.normalization_engine import normalize_signals
 from ..services.scoring_engine import compute_scores
+from ..services.vector_store import chunk_evaluation, index_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +226,13 @@ def evaluate_idea(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Evaluation failed: {exc}",
         ) from exc
+
+    # ── 11. Index evaluation data for RAG chat ─────────────────
+    try:
+        chunks = chunk_evaluation(str(idea_id), report.model_dump())
+        index_chunks(chunks)
+    except Exception as exc:
+        logger.warning("Vector indexing failed (non-blocking): %s", exc)
 
     print(f"✅ [EVALUATION] Completed — returning final report to frontend (score={scores.final_viability_score:.1f}, verdict={summary['verdict']})")
     return report

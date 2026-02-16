@@ -24,12 +24,20 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - CHROMADB_PERSIST_DIR=/app/vector_store
     volumes:
       - backend-data:/app/data
+      - vector-store:/app/vector_store
     networks:
       - startbot-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import httpx; httpx.get('http://localhost:8000/health')",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,6 +65,8 @@ services:
 # ── Volumes ───────────────────────────────────────────────────────────────
 volumes:
   backend-data:
+    driver: local
+  vector-store:
     driver: local
 
 # ── Networks ──────────────────────────────────────────────────────────────

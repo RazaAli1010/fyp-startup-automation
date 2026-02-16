@@ -25,6 +25,7 @@ from ..models.mvp_report import MVPReport
 from ..models.user import User
 from ..schemas.mvp_schema import MVPBlueprintResponse, MVPReportRecord, MVPReportListResponse
 from ..services.auth_dependency import get_current_user
+from ..services.vector_store import chunk_mvp, index_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,13 @@ def generate_mvp(
     db.refresh(db_record)
 
     print(f"✅ [MVP] MVP blueprint generated and stored — idea_id={idea_id}")
+
+    # Index for RAG chat
+    try:
+        chunks = chunk_mvp(str(idea_id), blueprint.model_dump())
+        index_chunks(chunks)
+    except Exception as exc:
+        logger.warning("Vector indexing failed (non-blocking): %s", exc)
 
     return _record_to_response(db_record)
 

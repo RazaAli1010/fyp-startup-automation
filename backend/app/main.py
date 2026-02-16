@@ -18,6 +18,7 @@ from .routes.pitch_deck import router as pitch_deck_router
 from .routes.market_research import router as market_research_router
 from .routes.mvp import router as mvp_router
 from .routes.legal import router as legal_router
+from .routes.chat import router as chat_router
 
 # Load environment variables from .env file
 load_dotenv()
@@ -107,6 +108,7 @@ app.include_router(pitch_deck_router)
 app.include_router(market_research_router)
 app.include_router(mvp_router)
 app.include_router(legal_router)
+app.include_router(chat_router)
 
 @app.get("/__cors_test")
 def cors_test():

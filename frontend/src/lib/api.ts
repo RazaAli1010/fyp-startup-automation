@@ -21,6 +21,8 @@ import type {
   MessageResponse,
   DashboardResponse,
   UserPublic,
+  ChatResponse,
+  ChatStatusResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -368,6 +370,30 @@ export async function getLegalDocument(
     console.log(`[API] getLegalDocument → GET /legal/${documentId}`);
   }
   return request<LegalDocumentRecord>(`/legal/${documentId}`);
+}
+
+// ── AI Chat Co-Founder API functions ─────────────────────
+
+export async function askChatCoFounder(
+  ideaId: string,
+  question: string,
+): Promise<ChatResponse> {
+  if (DEBUG_API) {
+    console.log(`[API] askChatCoFounder → POST /chat/${ideaId}/ask`);
+  }
+  return request<ChatResponse>(`/chat/${ideaId}/ask`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
+
+export async function getChatStatus(
+  ideaId: string,
+): Promise<ChatStatusResponse> {
+  if (DEBUG_API) {
+    console.log(`[API] getChatStatus → GET /chat/${ideaId}/status`);
+  }
+  return request<ChatStatusResponse>(`/chat/${ideaId}/status`);
 }
 
 export { ApiError };

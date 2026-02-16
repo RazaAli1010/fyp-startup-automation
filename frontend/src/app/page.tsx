@@ -395,6 +395,40 @@ export default function Home() {
           </div>
         </div>
 
+        {/* AI Chat Co-Founder */}
+        <div className="mt-8 gradient-border group relative rounded-2xl bg-[#0f172a] p-7 transition-all duration-300 hover:bg-[#131c31] hover:scale-[1.01]">
+          <div className="flex items-start gap-5">
+            <div className="flex h-13 w-13 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 transition-transform duration-300 group-hover:scale-110">
+              <svg
+                className="h-6 w-6 text-indigo-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z"
+                />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="mb-2 text-lg font-semibold text-slate-100">
+                AI Chat Co-Founder
+              </h3>
+              <p className="mb-4 text-sm leading-relaxed text-slate-400">
+                Ask strategic questions about your startup idea. Powered by RAG
+                — grounded in your actual agent outputs, not generic advice.
+              </p>
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+                Requires: At least one completed agent
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* CTA to dashboard */}
         <div className="mt-10 text-center">
           <Link href="/dashboard">

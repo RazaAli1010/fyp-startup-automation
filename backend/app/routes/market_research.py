@@ -24,6 +24,7 @@ from ..models.market_research import MarketResearch
 from ..models.user import User
 from ..schemas.market_research_schema import MarketResearchRecord, MarketResearchListResponse
 from ..services.auth_dependency import get_current_user
+from ..services.vector_store import chunk_market_research, index_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,26 @@ def generate_research(
     print(f"✅ [MARKET] Demand: {result.demand_strength}/100")
 
     response = _record_to_response(db_record)
+
+    # Index for RAG chat
+    try:
+        mr_data = {
+            "tam_min": result.tam_min, "tam_max": result.tam_max,
+            "sam_min": result.sam_min, "sam_max": result.sam_max,
+            "som_min": result.som_min, "som_max": result.som_max,
+            "arpu_annual": result.arpu_annual,
+            "growth_rate_estimate": result.growth_rate_estimate,
+            "demand_strength": result.demand_strength,
+            "assumptions": result.assumptions,
+            "confidence": result.confidence,
+            "competitors": result.competitors,
+            "competitor_count": result.competitor_count,
+        }
+        chunks = chunk_market_research(str(idea_id), mr_data)
+        index_chunks(chunks)
+    except Exception as exc:
+        logger.warning("Vector indexing failed (non-blocking): %s", exc)
+
     print("✅ [MARKET] Returning final response to frontend")
     return response
 

@@ -38,6 +38,7 @@ from ..services.trend_agent import fetch_trend_demand_signals
 from ..services.competitor_agent import fetch_competitor_signals
 from ..services.normalization_engine import normalize_signals
 from ..services.scoring_engine import compute_scores
+from ..services.vector_store import chunk_pitch_deck, index_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,20 @@ def generate_deck(
     print(f"✅ [PITCH-DECK] pdf_url={db_record.pdf_url}")
 
     response = _record_to_response(db_record)
+
+    # Index for RAG chat
+    try:
+        deck_data = {
+            "title": idea.startup_name,
+            "provider": deck.provider,
+            "status": "completed",
+            "view_url": deck.view_url,
+        }
+        chunks = chunk_pitch_deck(str(idea_id), deck_data)
+        index_chunks(chunks)
+    except Exception as exc:
+        logger.warning("Vector indexing failed (non-blocking): %s", exc)
+
     print(f"✅ [PITCH-DECK] Returning final response to frontend")
     return response
 

@@ -3,11 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  generateLegalDocument,
-  getLegalByIdea,
-  ApiError,
-} from "@/lib/api";
+import { generateLegalDocument, getLegalByIdea, ApiError } from "@/lib/api";
 import type { GenerateLegalRequest } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,7 +39,9 @@ function LegalContent() {
 
   const [status, setStatus] = useState<Status>("loading");
   const [documents, setDocuments] = useState<LegalDocumentRecord[]>([]);
-  const [selectedDoc, setSelectedDoc] = useState<LegalDocumentRecord | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<LegalDocumentRecord | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
 
@@ -59,7 +57,9 @@ function LegalContent() {
         setDocuments([]);
         setStatus("success");
       } else {
-        setError(err instanceof Error ? err.message : "Failed to load documents");
+        setError(
+          err instanceof Error ? err.message : "Failed to load documents",
+        );
         setStatus("error");
       }
     }
@@ -86,7 +86,9 @@ function LegalContent() {
       setSelectedDoc(result);
     } catch (err: unknown) {
       setError(
-        err instanceof Error ? err.message : "Generation failed. Please try again.",
+        err instanceof Error
+          ? err.message
+          : "Generation failed. Please try again.",
       );
     } finally {
       setGenerating(null);
@@ -193,9 +195,13 @@ function LegalContent() {
               {isGenerating ? (
                 <Spinner size="sm" />
               ) : existing ? (
-                <span className="text-[10px] text-emerald-400 font-medium">View</span>
+                <span className="text-[10px] text-emerald-400 font-medium">
+                  View
+                </span>
               ) : (
-                <span className="text-[10px] text-slate-500 font-medium">Generate</span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  Generate
+                </span>
               )}
             </button>
           );
@@ -262,7 +268,10 @@ function LegalContent() {
               </h3>
               <ul className="space-y-1.5">
                 {doc.customization_notes.map((note, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-xs text-slate-400"
+                  >
                     <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />
                     {note}
                   </li>
@@ -279,7 +288,10 @@ function LegalContent() {
               </h3>
               <ul className="space-y-1.5">
                 {doc.legal_risk_notes.map((note, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-amber-400/80">
+                  <li
+                    key={i}
+                    className="flex items-start gap-2 text-xs text-amber-400/80"
+                  >
                     <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                     {note}
                   </li>
@@ -313,19 +325,35 @@ function LegalContent() {
 
       {/* Agent Actions */}
       <div className="mt-8 mb-8 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
-        <h2 className="mb-1 text-lg font-semibold text-slate-100">Related Tools</h2>
-        <p className="mb-5 text-sm text-slate-500">Explore other reports for this idea.</p>
+        <h2 className="mb-1 text-lg font-semibold text-slate-100">
+          Related Tools
+        </h2>
+        <p className="mb-5 text-sm text-slate-500">
+          Explore other reports for this idea.
+        </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <button
             onClick={() => router.push(`/ideas/${ideaId}`)}
             className="group flex flex-col items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.02] p-5 transition-all duration-200 hover:bg-white/[0.05] hover:border-indigo-500/30 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/10"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 transition-transform duration-200 group-hover:scale-110">
-              <svg className="h-5 w-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="h-5 w-5 text-indigo-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
             </div>
-            <span className="text-sm font-semibold text-slate-100">View Evaluation</span>
+            <span className="text-sm font-semibold text-slate-100">
+              View Evaluation
+            </span>
             <span className="text-xs text-slate-500">Viability scores</span>
           </button>
 
@@ -334,11 +362,23 @@ function LegalContent() {
             className="group flex flex-col items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.02] p-5 transition-all duration-200 hover:bg-white/[0.05] hover:border-purple-500/30 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-purple-500/10"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 transition-transform duration-200 group-hover:scale-110">
-              <svg className="h-5 w-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" />
+              <svg
+                className="h-5 w-5 text-purple-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"
+                />
               </svg>
             </div>
-            <span className="text-sm font-semibold text-slate-100">Pitch Deck</span>
+            <span className="text-sm font-semibold text-slate-100">
+              Pitch Deck
+            </span>
             <span className="text-xs text-slate-500">Investor-ready deck</span>
           </button>
 
@@ -347,12 +387,52 @@ function LegalContent() {
             className="group flex flex-col items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.02] p-5 transition-all duration-200 hover:bg-white/[0.05] hover:border-orange-500/30 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-orange-500/10"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500/10 transition-transform duration-200 group-hover:scale-110">
-              <svg className="h-5 w-5 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.59-5.59a2.002 2.002 0 010-2.83l.81-.81a2.002 2.002 0 012.83 0L12 8.47l2.53-2.53a2.002 2.002 0 012.83 0l.81.81a2.002 2.002 0 010 2.83l-5.59 5.59a.996.996 0 01-1.41 0z" />
+              <svg
+                className="h-5 w-5 text-orange-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M11.42 15.17l-5.59-5.59a2.002 2.002 0 010-2.83l.81-.81a2.002 2.002 0 012.83 0L12 8.47l2.53-2.53a2.002 2.002 0 012.83 0l.81.81a2.002 2.002 0 010 2.83l-5.59 5.59a.996.996 0 01-1.41 0z"
+                />
               </svg>
             </div>
-            <span className="text-sm font-semibold text-slate-100">MVP Blueprint</span>
+            <span className="text-sm font-semibold text-slate-100">
+              MVP Blueprint
+            </span>
             <span className="text-xs text-slate-500">Feature plan</span>
+          </button>
+
+          {/* AI Chat Co-Founder */}
+          <button
+            onClick={() => router.push(`/chat/${ideaId}`)}
+            className="group flex flex-col items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.02] p-5 transition-all duration-200 hover:bg-white/[0.05] hover:border-indigo-500/30 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/10"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/10 transition-transform duration-200 group-hover:scale-110">
+              <svg
+                className="h-5 w-5 text-indigo-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+                />
+              </svg>
+            </div>
+            <span className="text-sm font-semibold text-slate-100">
+              AI Co-Founder
+            </span>
+            <span className="text-xs text-slate-500">
+              Ask strategic questions
+            </span>
           </button>
         </div>
       </div>

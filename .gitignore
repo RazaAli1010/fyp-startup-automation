@@ -326,6 +326,7 @@ pids/
 # Docker
 docker-compose.override.yml
 backend/data/
+backend/vector_store/
 
 # Terraform (if used later)
 *.tfstate

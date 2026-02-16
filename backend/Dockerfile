@@ -31,8 +31,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application source
 COPY . .
 
-# Create data directory for SQLite persistence (mounted as volume)
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
+# Create data directories for persistence (mounted as volumes)
+RUN mkdir -p /app/data /app/vector_store && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser

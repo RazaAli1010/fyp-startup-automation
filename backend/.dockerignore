@@ -7,6 +7,7 @@ __pycache__
 !.env.example
 *.db
 data/
+vector_store/
 .git
 .gitignore
 venv/

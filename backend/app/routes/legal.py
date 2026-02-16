@@ -29,6 +29,7 @@ from ..schemas.legal_schema import (
     LegalDocumentResponse,
 )
 from ..services.auth_dependency import get_current_user
+from ..services.vector_store import chunk_legal, index_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +189,13 @@ def generate_legal(
     db.refresh(db_record)
 
     print(f"📄 [LEGAL] Document stored in DB — {doc_type_key} for idea_id={idea_id}")
+
+    # Index for RAG chat
+    try:
+        chunks = chunk_legal(str(idea_id), doc_output.model_dump())
+        index_chunks(chunks)
+    except Exception as exc:
+        logger.warning("Vector indexing failed (non-blocking): %s", exc)
 
     return _record_to_response(db_record)
 
