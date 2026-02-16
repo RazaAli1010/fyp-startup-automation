@@ -106,8 +106,9 @@ async function request<T>(
           `[API] Request timed out after ${timeoutMs}ms: ${method} ${path}`,
         );
       }
-      throw new Error(
-        `Request timed out — the server took too long to respond`,
+      throw new ApiError(
+        408,
+        "Request timed out — the server took too long to respond. Please try again.",
       );
     }
     if (DEBUG_API) {
@@ -116,7 +117,10 @@ async function request<T>(
         networkErr,
       );
     }
-    throw networkErr;
+    throw new ApiError(
+      0,
+      "Service temporarily unavailable. Please check your connection and try again.",
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -203,6 +207,7 @@ export async function createIdea(
       startup_name: data.startup_name,
       industry: data.industry,
       target_customer_type: data.target_customer_type,
+      geography: data.geography,
     });
   }
   return request<CreateIdeaResponse>("/ideas/", {

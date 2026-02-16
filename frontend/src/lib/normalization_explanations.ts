@@ -57,12 +57,14 @@ export const NORMALIZATION_FALLBACKS: Record<SignalKey, NormalizationFallback> =
     },
     tech_complexity_score: {
       label: "Tech Complexity",
-      formula: "normalized = raw × 100",
-      description: "User-provided technical complexity (0-1) scaled to 0-100.",
+      formula: "normalized = raw × 100 (inferred: low→20, medium→50, high→75)",
+      description:
+        "Technical complexity inferred by OpenAI from business description, mapped to 0-100.",
     },
     regulatory_risk_score: {
       label: "Regulatory Risk",
-      formula: "normalized = raw × 100",
-      description: "User-provided regulatory risk (0-1) scaled to 0-100.",
+      formula: "normalized = raw × 100 (inferred: low→20, medium→50, high→80)",
+      description:
+        "Regulatory risk inferred by OpenAI from business description, mapped to 0-100.",
     },
   };

@@ -38,16 +38,8 @@ export interface StartupIdeaInput {
   startup_name: string;
   one_line_description: string;
   industry: string;
-  target_customer_type: "B2B" | "B2C" | "Marketplace";
+  target_customer_type: "B2B" | "B2C" | "B2B2C";
   geography: string;
-  customer_size: "Individual" | "SMB" | "Mid-Market" | "Enterprise";
-  revenue_model: "Subscription" | "One-time" | "Marketplace Fee" | "Ads";
-  pricing_estimate: number;
-  estimated_cac: number;
-  estimated_ltv: number;
-  team_size: number;
-  tech_complexity: number;
-  regulatory_risk: number;
 }
 
 // ── Response: POST /ideas/ ─────────────────────────────────

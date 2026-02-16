@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { FormProgress } from "@/components/forms/form-progress";
 import {
   Card,
@@ -17,7 +16,9 @@ import {
 import { createIdea } from "@/lib/api";
 import type { StartupIdeaInput } from "@/lib/types";
 import type { TooltipContent } from "@/components/ui/info-tooltip";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { RouteGuard } from "@/components/auth/route-guard";
+import { INDUSTRIES, COUNTRIES, CUSTOMER_TYPES } from "@/lib/constants";
 
 const FIELD_TOOLTIPS: Record<string, TooltipContent> = {
   startup_name: {
@@ -26,81 +27,30 @@ const FIELD_TOOLTIPS: Record<string, TooltipContent> = {
   },
   one_line_description: {
     description:
-      "A concise explanation of what your startup does and who it is for.",
-    impact: "Helps generate search and analysis queries.",
+      "A detailed explanation of your startup: the problem it solves, how it works, who it serves, and what makes it different. 2-5 paragraphs recommended.",
+    impact:
+      "This is the primary input our AI uses to infer your revenue model, technical complexity, regulatory risk, and generate search queries.",
   },
   industry: {
-    description:
-      "The primary industry your startup operates in (e.g. FinTech, HealthTech, SaaS).",
+    description: "Select one or more industries your startup operates in.",
     impact: "Used to identify relevant markets, trends, and competitors.",
   },
   target_customer_type: {
     description:
-      "Who your primary customers are (businesses, consumers, or both).",
-    impact: "Affects competition analysis and problem relevance.",
+      "Who your primary customers are: businesses (B2B), consumers (B2C), or both (B2B2C).",
+    impact:
+      "Affects competition analysis, market sizing, and problem relevance.",
   },
   geography: {
-    description: "The main region or country you are targeting.",
+    description: "Select the countries or regions you are targeting.",
     impact: "Used to contextualize market demand and competition.",
-  },
-  customer_size: {
-    description:
-      "The size of your typical customer (individuals, SMBs, enterprises).",
-    impact: "Affects market realism and competition pressure.",
-  },
-  revenue_model: {
-    description:
-      "How you plan to make money (subscription, one-time payment, etc.).",
-    impact: "Used as contextual information only.",
-  },
-  pricing_estimate: {
-    description: "Approximate price you expect customers to pay.",
-    impact: "Used to assess market positioning (not exact revenue).",
-  },
-  estimated_cac: {
-    description: "Estimated cost to acquire one customer.",
-    impact: "Used as contextual input for execution realism.",
-  },
-  estimated_ltv: {
-    description: "Estimated total revenue from a customer over their lifetime.",
-    impact: "Used as contextual input only.",
-  },
-  team_size: {
-    description:
-      "Expected number of people needed to build and run the product initially.",
-    impact: "Used to assess execution feasibility.",
-  },
-  tech_complexity: {
-    description:
-      "How difficult the technology is to build (0 = simple, 1 = very complex).",
-    impact: "Higher complexity reduces execution feasibility score.",
-  },
-  regulatory_risk: {
-    description:
-      "How much regulation or legal complexity is involved (0 = none, 1 = very high).",
-    impact: "Higher regulatory risk reduces execution feasibility score.",
   },
 };
 
-const CUSTOMER_TYPE_OPTIONS = [
-  { value: "B2B", label: "B2B" },
-  { value: "B2C", label: "B2C" },
-  { value: "Marketplace", label: "Marketplace" },
-];
-
-const CUSTOMER_SIZE_OPTIONS = [
-  { value: "Individual", label: "Individual" },
-  { value: "SMB", label: "SMB" },
-  { value: "Mid-Market", label: "Mid-Market" },
-  { value: "Enterprise", label: "Enterprise" },
-];
-
-const REVENUE_MODEL_OPTIONS = [
-  { value: "Subscription", label: "Subscription" },
-  { value: "One-time", label: "One-time" },
-  { value: "Marketplace Fee", label: "Marketplace Fee" },
-  { value: "Ads", label: "Ads" },
-];
+const CUSTOMER_TYPE_OPTIONS = CUSTOMER_TYPES.map((t) => ({
+  value: t,
+  label: t,
+}));
 
 type FormErrors = Partial<Record<keyof StartupIdeaInput, string>>;
 
@@ -109,15 +59,12 @@ function validate(form: StartupIdeaInput): FormErrors {
   if (!form.startup_name.trim()) errors.startup_name = "Required";
   if (!form.one_line_description.trim())
     errors.one_line_description = "Required";
-  if (!form.industry.trim()) errors.industry = "Required";
+  if (form.one_line_description.trim().split(/\s+/).length < 5)
+    errors.one_line_description =
+      "Please provide a more detailed description (at least 5 words)";
+  if (!form.industry.trim()) errors.industry = "Select at least one industry";
   if (!form.target_customer_type) errors.target_customer_type = "Required";
-  if (!form.geography.trim()) errors.geography = "Required";
-  if (!form.customer_size) errors.customer_size = "Required";
-  if (!form.revenue_model) errors.revenue_model = "Required";
-  if (form.pricing_estimate <= 0) errors.pricing_estimate = "Must be > 0";
-  if (form.estimated_cac < 0) errors.estimated_cac = "Must be >= 0";
-  if (form.estimated_ltv < 0) errors.estimated_ltv = "Must be >= 0";
-  if (form.team_size < 1) errors.team_size = "Must be >= 1";
+  if (!form.geography.trim()) errors.geography = "Select at least one country";
   return errors;
 }
 
@@ -127,40 +74,161 @@ const INITIAL_FORM: StartupIdeaInput = {
   industry: "",
   target_customer_type: "" as StartupIdeaInput["target_customer_type"],
   geography: "",
-  customer_size: "" as StartupIdeaInput["customer_size"],
-  revenue_model: "" as StartupIdeaInput["revenue_model"],
-  pricing_estimate: 0,
-  estimated_cac: 0,
-  estimated_ltv: 0,
-  team_size: 1,
-  tech_complexity: 0.5,
-  regulatory_risk: 0.3,
 };
 
-const STEP_LABELS = [
-  "Core Idea",
-  "Target Market",
-  "Business Model",
-  "Execution",
-];
+const STEP_LABELS = ["Core Idea", "Target Market"];
 
 function computeCurrentStep(form: StartupIdeaInput): number {
   const s1 =
     form.startup_name.trim() !== "" &&
-    form.one_line_description.trim() !== "" &&
+    form.one_line_description.trim().split(/\s+/).length >= 5 &&
     form.industry.trim() !== "";
   const s2 =
     (form.target_customer_type as string) !== "" &&
-    form.geography.trim() !== "" &&
-    (form.customer_size as string) !== "";
-  const s3 = (form.revenue_model as string) !== "" && form.pricing_estimate > 0;
+    form.geography.trim() !== "";
 
-  if (s1 && s2 && s3) return 3;
-  if (s1 && s2) return 2;
-  if (s1) return 1;
+  if (s1 && s2) return 1;
+  if (s1) return 0;
   return 0;
 }
 
+/* ── Multi-Select Chip Component ─────────────────────────────── */
+function MultiSelectChips({
+  label,
+  tooltip,
+  options,
+  selected,
+  onChange,
+  error,
+  searchable = false,
+  placeholder = "Search...",
+}: {
+  label: string;
+  tooltip?: TooltipContent;
+  options: string[];
+  selected: string[];
+  onChange: (selected: string[]) => void;
+  error?: string;
+  searchable?: boolean;
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = search
+    ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  function toggle(item: string) {
+    if (selected.includes(item)) {
+      onChange(selected.filter((s) => s !== item));
+    } else {
+      onChange([...selected, item]);
+    }
+  }
+
+  function remove(item: string) {
+    onChange(selected.filter((s) => s !== item));
+  }
+
+  return (
+    <div className="space-y-1.5" ref={ref}>
+      <label className="flex items-center gap-1.5 text-sm font-medium text-slate-300">
+        {label}
+        {tooltip && <InfoTooltip content={tooltip} />}
+      </label>
+
+      {/* Selected chips */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map((item) => (
+            <span
+              key={item}
+              className="inline-flex items-center gap-1 rounded-md bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-300 border border-indigo-500/20"
+            >
+              {item}
+              <button
+                type="button"
+                onClick={() => remove(item)}
+                className="ml-0.5 text-indigo-400/60 hover:text-indigo-300 transition-colors"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Dropdown trigger */}
+      <div className="relative">
+        <input
+          type="text"
+          placeholder={selected.length > 0 ? "Add more..." : placeholder}
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          className={`
+            w-full rounded-lg border bg-[#0f172a]/80 px-3.5 py-2.5
+            text-sm text-slate-100 placeholder-slate-500
+            transition-colors duration-150
+            focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-1 focus:ring-offset-[#020617]
+            ${error ? "border-red-500/50" : "border-slate-700/60 hover:border-indigo-500/30"}
+          `}
+        />
+
+        {open && filtered.length > 0 && (
+          <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-slate-700/60 bg-[#0f172a] shadow-xl">
+            {filtered.map((item) => {
+              const isSelected = selected.includes(item);
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    toggle(item);
+                    setSearch("");
+                  }}
+                  className={`
+                    flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors
+                    ${isSelected ? "bg-indigo-500/10 text-indigo-300" : "text-slate-300 hover:bg-white/5"}
+                  `}
+                >
+                  <span
+                    className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
+                      isSelected
+                        ? "border-indigo-500 bg-indigo-500 text-white"
+                        : "border-slate-600"
+                    }`}
+                  >
+                    {isSelected ? "✓" : ""}
+                  </span>
+                  {item}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+/* ── Main Form ───────────────────────────────────────────────── */
 function NewIdeaForm() {
   const router = useRouter();
   const [form, setForm] = useState<StartupIdeaInput>(INITIAL_FORM);
@@ -168,6 +236,14 @@ function NewIdeaForm() {
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const currentStep = useMemo(() => computeCurrentStep(form), [form]);
+
+  // Industry and geography as arrays (stored as comma-separated in form)
+  const selectedIndustries = form.industry
+    ? form.industry.split(", ").filter(Boolean)
+    : [];
+  const selectedGeographies = form.geography
+    ? form.geography.split(", ").filter(Boolean)
+    : [];
 
   function update<K extends keyof StartupIdeaInput>(
     key: K,
@@ -218,8 +294,9 @@ function NewIdeaForm() {
           Startup Idea
         </h1>
         <p className="mt-2 text-sm text-slate-400">
-          Fill in every section. Our AI agents will evaluate your idea using
-          real market data.
+          Describe your startup in detail. Our AI agents will infer your
+          business model, technical complexity, and regulatory risk — then
+          evaluate using real market data.
         </p>
       </div>
 
@@ -247,21 +324,54 @@ function NewIdeaForm() {
               onChange={(e) => update("startup_name", e.target.value)}
               error={errors.startup_name}
             />
-            <Input
-              label="One-Line Description"
-              tooltip={FIELD_TOOLTIPS.one_line_description}
-              placeholder="e.g. AI-powered bookkeeping for freelancers"
-              value={form.one_line_description}
-              onChange={(e) => update("one_line_description", e.target.value)}
-              error={errors.one_line_description}
-            />
-            <Input
+
+            {/* Detailed Business Description — textarea */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="description"
+                className="flex items-center gap-1.5 text-sm font-medium text-slate-300"
+              >
+                Detailed Business Description
+                <InfoTooltip content={FIELD_TOOLTIPS.one_line_description} />
+              </label>
+              <textarea
+                id="description"
+                rows={6}
+                placeholder="Describe the problem your startup solves, how the solution works, who the target users are, and what makes your approach unique. Be as detailed as possible (2-5 paragraphs)."
+                value={form.one_line_description}
+                onChange={(e) => update("one_line_description", e.target.value)}
+                className={`
+                  w-full rounded-lg border bg-[#0f172a]/80 px-3.5 py-2.5
+                  text-sm text-slate-100 placeholder-slate-500 resize-y min-h-[120px]
+                  transition-colors duration-150
+                  focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:ring-offset-1 focus:ring-offset-[#020617]
+                  ${errors.one_line_description ? "border-red-500/50" : "border-slate-700/60 hover:border-indigo-500/30"}
+                `}
+              />
+              {errors.one_line_description && (
+                <p className="text-xs text-red-400">
+                  {errors.one_line_description}
+                </p>
+              )}
+              <p className="text-xs text-slate-500">
+                {
+                  form.one_line_description.trim().split(/\s+/).filter(Boolean)
+                    .length
+                }{" "}
+                words
+              </p>
+            </div>
+
+            {/* Industry Multi-Select */}
+            <MultiSelectChips
               label="Industry"
               tooltip={FIELD_TOOLTIPS.industry}
-              placeholder="e.g. Fintech, Healthcare, EdTech"
-              value={form.industry}
-              onChange={(e) => update("industry", e.target.value)}
+              options={INDUSTRIES}
+              selected={selectedIndustries}
+              onChange={(items) => update("industry", items.join(", "))}
               error={errors.industry}
+              searchable
+              placeholder="Search industries..."
             />
           </CardContent>
         </Card>
@@ -286,139 +396,17 @@ function NewIdeaForm() {
               }
               error={errors.target_customer_type}
             />
-            <Input
-              label="Geography"
+
+            {/* Geography Multi-Select */}
+            <MultiSelectChips
+              label="Target Geography"
               tooltip={FIELD_TOOLTIPS.geography}
-              placeholder="e.g. United States, Global, Southeast Asia"
-              value={form.geography}
-              onChange={(e) => update("geography", e.target.value)}
+              options={COUNTRIES}
+              selected={selectedGeographies}
+              onChange={(items) => update("geography", items.join(", "))}
               error={errors.geography}
-            />
-            <Select
-              label="Customer Size"
-              tooltip={FIELD_TOOLTIPS.customer_size}
-              options={CUSTOMER_SIZE_OPTIONS}
-              value={form.customer_size}
-              onChange={(e) =>
-                update(
-                  "customer_size",
-                  e.target.value as StartupIdeaInput["customer_size"],
-                )
-              }
-              error={errors.customer_size}
-            />
-          </CardContent>
-        </Card>
-
-        {/* ── Section 3: Business Model ────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Business Model</CardTitle>
-            <CardDescription>How will this startup make money?</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Select
-              label="Revenue Model"
-              tooltip={FIELD_TOOLTIPS.revenue_model}
-              options={REVENUE_MODEL_OPTIONS}
-              value={form.revenue_model}
-              onChange={(e) =>
-                update(
-                  "revenue_model",
-                  e.target.value as StartupIdeaInput["revenue_model"],
-                )
-              }
-              error={errors.revenue_model}
-            />
-            <Input
-              label="Pricing Estimate (USD)"
-              tooltip={FIELD_TOOLTIPS.pricing_estimate}
-              type="number"
-              min={0}
-              step={0.01}
-              placeholder="e.g. 29.99"
-              value={form.pricing_estimate || ""}
-              onChange={(e) =>
-                update("pricing_estimate", parseFloat(e.target.value) || 0)
-              }
-              error={errors.pricing_estimate}
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Estimated CAC (USD)"
-                tooltip={FIELD_TOOLTIPS.estimated_cac}
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="e.g. 50"
-                value={form.estimated_cac || ""}
-                onChange={(e) =>
-                  update("estimated_cac", parseFloat(e.target.value) || 0)
-                }
-                error={errors.estimated_cac}
-              />
-              <Input
-                label="Estimated LTV (USD)"
-                tooltip={FIELD_TOOLTIPS.estimated_ltv}
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="e.g. 500"
-                value={form.estimated_ltv || ""}
-                onChange={(e) =>
-                  update("estimated_ltv", parseFloat(e.target.value) || 0)
-                }
-                error={errors.estimated_ltv}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* ── Section 4: Execution Assumptions ─────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Execution Assumptions</CardTitle>
-            <CardDescription>
-              Your team and technical landscape.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <Input
-              label="Team Size"
-              tooltip={FIELD_TOOLTIPS.team_size}
-              type="number"
-              min={1}
-              step={1}
-              placeholder="e.g. 3"
-              value={form.team_size || ""}
-              onChange={(e) =>
-                update("team_size", parseInt(e.target.value, 10) || 1)
-              }
-              error={errors.team_size}
-            />
-            <Slider
-              label="Tech Complexity"
-              tooltip={FIELD_TOOLTIPS.tech_complexity}
-              min={0}
-              max={1}
-              step={0.05}
-              value={form.tech_complexity}
-              displayValue={`${Math.round(form.tech_complexity * 100)}%`}
-              onChange={(e) =>
-                update("tech_complexity", parseFloat(e.target.value))
-              }
-            />
-            <Slider
-              label="Regulatory Risk"
-              tooltip={FIELD_TOOLTIPS.regulatory_risk}
-              min={0}
-              max={1}
-              step={0.05}
-              value={form.regulatory_risk}
-              displayValue={`${Math.round(form.regulatory_risk * 100)}%`}
-              onChange={(e) =>
-                update("regulatory_risk", parseFloat(e.target.value))
-              }
+              searchable
+              placeholder="Search countries..."
             />
           </CardContent>
         </Card>

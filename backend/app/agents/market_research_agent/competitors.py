@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ...services.competitor_normalizer import normalize_competitor_list, normalize_competitor_name
+from ...services.competitor_cleaner import clean_competitors
 
 # ---------------------------------------------------------------------------
 # Exa API configuration
@@ -56,9 +56,18 @@ def _extract_domain(url: str) -> str:
     return match.group(1) if match else ""
 
 
+_EXCLUDED_URL_PATTERNS: tuple[str, ...] = (
+    "/blog", "/news", "/article", "/press", "/media",
+    "/resources/", "/insights/", "/learn/", "/guides/",
+)
+
+
 def _is_excluded(url: str) -> bool:
     domain = _extract_domain(url)
-    return any(excl in domain for excl in _EXCLUDED_DOMAINS)
+    if any(excl in domain for excl in _EXCLUDED_DOMAINS):
+        return True
+    url_lower = url.lower()
+    return any(pat in url_lower for pat in _EXCLUDED_URL_PATTERNS)
 
 
 def _extract_company_name(title: str, url: str) -> str:
@@ -165,29 +174,20 @@ async def fetch_competitors(query_bundle: dict) -> dict:
 
     print(f"📄 [EXA-MR] Total raw results: {len(raw_results)}")
 
-    # Deduplicate & filter
-    seen_domains: set[str] = set()
-    competitors: list[dict] = []
+    # ── Run shared competitor cleaner (hard filter + OpenAI + safety) ──
+    industry = query_bundle.get("industry", "")
+    cleaned_names = await clean_competitors(raw_results, industry=industry)
 
+    # Build final competitor list with descriptions
+    # Map cleaned names back to raw results for descriptions
+    seen_domains: set[str] = set()
+    desc_map: dict[str, str] = {}
     for result in raw_results:
         url = result.get("url", "")
-        if not url or _is_excluded(url):
-            continue
-
         domain = _extract_domain(url)
         if domain in seen_domains:
             continue
         seen_domains.add(domain)
-
-        title = result.get("title", "")
-        if not title or len(title) > 80:
-            continue
-
-        name = _extract_company_name(title, url)
-        if name.lower() == "unknown":
-            continue
-
-        # Build short description from text/highlights
         text = result.get("text", "")
         highlights = result.get("highlights", [])
         desc_parts = []
@@ -196,28 +196,29 @@ async def fetch_competitors(query_bundle: dict) -> dict:
         if highlights:
             desc_parts.append(" ".join(highlights[:2]))
         description = " ".join(desc_parts).strip()[:400]
+        title = result.get("title", "")
+        name = _extract_company_name(title, url)
+        # Store description by both title-derived name and domain root
+        desc_map[name.lower()] = description
+        root = domain.split(".")[0].lower() if domain else ""
+        if root:
+            desc_map[root] = description
 
-        competitors.append({
-            "name": name,
-            "description": description if description else f"Competitor in {query_bundle['industry']} space",
-        })
-
-    # Normalize competitor names: dedupe, strip suffixes, max 2 words, cap 8
-    raw_names = [c["name"] for c in competitors]
-    normalized_names = normalize_competitor_list(raw_names)
-
-    # Rebuild competitor list with normalized names
-    name_set = {n.lower() for n in normalized_names}
     final_competitors = []
-    seen_normalized: set[str] = set()
-    for c in competitors:
-        norm = normalize_competitor_name(c["name"])
-        if norm and norm.lower() in name_set and norm.lower() not in seen_normalized:
-            seen_normalized.add(norm.lower())
-            final_competitors.append({"name": norm, "description": c["description"]})
+    for name in cleaned_names:
+        desc = desc_map.get(name.lower(), "")
+        if not desc:
+            # Try partial match
+            for key, val in desc_map.items():
+                if name.lower() in key or key in name.lower():
+                    desc = val
+                    break
+        if not desc:
+            desc = f"Competitor in {industry} space"
+        final_competitors.append({"name": name, "description": desc})
 
     count = len(final_competitors)
-    print(f"🏢 [COMP] Competitors normalized: {count} — {[c['name'] for c in final_competitors]}")
+    print(f"🏢 [COMP] Competitors cleaned: {count} — {[c['name'] for c in final_competitors]}")
 
     return {
         "competitors": final_competitors,

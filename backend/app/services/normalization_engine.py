@@ -139,12 +139,12 @@ def normalize_signals(
     raw_feat_overlap = competitor.feature_overlap_score
     feature_overlap = _clamp(raw_feat_overlap * 100)
 
-    # 7. tech_complexity_score  (idea.tech_complexity is 0-1)
-    raw_tech = idea.tech_complexity
+    # 7. tech_complexity_score  (idea.tech_complexity is 0-1, inferred by OpenAI)
+    raw_tech = idea.tech_complexity if idea.tech_complexity is not None else 0.5
     tech_complexity_score = _clamp(raw_tech * 100)
 
-    # 8. regulatory_risk_score  (idea.regulatory_risk is 0-1)
-    raw_reg = idea.regulatory_risk
+    # 8. regulatory_risk_score  (idea.regulatory_risk is 0-1, inferred by OpenAI)
+    raw_reg = idea.regulatory_risk if idea.regulatory_risk is not None else 0.5
     regulatory_risk_score = _clamp(raw_reg * 100)
 
     # ------------------------------------------------------------------ #
@@ -189,13 +189,13 @@ def normalize_signals(
         ),
         "tech_complexity_score": NormalizationExplanation(
             raw_value=round(raw_tech, 4),
-            formula="normalized = raw × 100",
-            description="User-provided technical complexity (0-1) scaled to 0-100.",
+            formula="normalized = raw × 100 (inferred: low→20, medium→50, high→75)",
+            description="Technical complexity inferred by OpenAI from business description, mapped to 0-100.",
         ),
         "regulatory_risk_score": NormalizationExplanation(
             raw_value=round(raw_reg, 4),
-            formula="normalized = raw × 100",
-            description="User-provided regulatory risk (0-1) scaled to 0-100.",
+            formula="normalized = raw × 100 (inferred: low→20, medium→50, high→80)",
+            description="Regulatory risk inferred by OpenAI from business description, mapped to 0-100.",
         ),
     }
 

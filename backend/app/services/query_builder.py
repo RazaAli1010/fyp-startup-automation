@@ -129,8 +129,8 @@ def build_query_bundle(idea: Idea) -> QueryBundle:
     startup_name = _safe(idea.startup_name)
     geography = _safe(idea.geography)
     customer_type = idea.target_customer_type or ""
-    customer_size = idea.customer_size or ""
-    revenue_model = idea.revenue_model or ""
+    customer_size = idea.customer_size or "SMB"
+    revenue_model = idea.revenue_model or "Subscription"
 
     desc_tokens = _tokenise(description)
     industry_tokens = _tokenise(industry)

@@ -30,7 +30,7 @@ export function CompetitorList({ competitors }: CompetitorListProps) {
     if (name && !seen.has(name.toLowerCase())) {
       seen.add(name.toLowerCase());
       shown.push(name);
-      if (shown.length >= 8) break;
+      if (shown.length >= 5) break;
     }
   }
 

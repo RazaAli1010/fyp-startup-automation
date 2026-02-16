@@ -41,18 +41,27 @@ class Idea(Base):
     one_line_description = Column(Text, nullable=False)
     industry = Column(String, nullable=False)
 
+    # User-provided inputs (simplified)
     target_customer_type = Column(String, nullable=False)
     geography = Column(String, nullable=False)
-    customer_size = Column(String, nullable=False)
 
-    revenue_model = Column(String, nullable=False)
-    pricing_estimate = Column(Float, nullable=False)
+    # Legacy columns — nullable with defaults for backward compatibility.
+    # New ideas will have these set to defaults; old ideas retain original values.
+    customer_size = Column(String, nullable=True, default="SMB")
+    revenue_model = Column(String, nullable=True, default="Subscription")
+    pricing_estimate = Column(Float, nullable=True, default=49.0)
+    estimated_cac = Column(Float, nullable=True, default=0.0)
+    estimated_ltv = Column(Float, nullable=True, default=0.0)
+    team_size = Column(Integer, nullable=True, default=5)
+    tech_complexity = Column(Float, nullable=True, default=0.5)
+    regulatory_risk = Column(Float, nullable=True, default=0.5)
 
-    estimated_cac = Column(Float, nullable=False)
-    estimated_ltv = Column(Float, nullable=False)
-    team_size = Column(Integer, nullable=False)
-    tech_complexity = Column(Float, nullable=False)
-    regulatory_risk = Column(Float, nullable=False)
+    # Inferred by OpenAI during evaluation (persisted so MR agent can reuse)
+    inferred_revenue_model = Column(String, nullable=True, default=None)
+    inferred_tech_level = Column(String, nullable=True, default=None)
+    inferred_reg_level = Column(String, nullable=True, default=None)
+    inferred_problem_keywords = Column(Text, nullable=True, default=None)
+    inferred_market_keywords = Column(Text, nullable=True, default=None)
 
     user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

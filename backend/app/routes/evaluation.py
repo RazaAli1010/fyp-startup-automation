@@ -33,6 +33,13 @@ from ..services.competitor_agent import fetch_competitor_signals
 from ..services.normalization_engine import normalize_signals
 from ..services.scoring_engine import compute_scores
 from ..services.vector_store import chunk_evaluation, index_chunks_async
+from ..services.idea_inference import (
+    infer_idea_attributes,
+    map_complexity_to_numeric,
+    map_regulatory_to_numeric,
+    map_revenue_model_to_pricing,
+    normalize_revenue_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,12 +164,44 @@ async def evaluate_idea(
         )
 
     try:
-        # ── 2. Build QueryBundle ─────────────────────────────────────────
-        logger.info("Pipeline step 2: Building query bundle")
+        # ── 2. OpenAI Inference — infer attributes from description ────
+        logger.info("Pipeline step 2: Inferring idea attributes via OpenAI")
+        print("🧠 [EVALUATION] Step 2: OpenAI structured inference")
+        inferred = await infer_idea_attributes(
+            description=idea.one_line_description,
+            industry=idea.industry,
+            target_customer_type=idea.target_customer_type,
+        )
+
+        # Map inferred levels to numeric values
+        raw_rev_model = inferred.get("revenue_model", "Subscription")
+        norm_rev_model = normalize_revenue_model(raw_rev_model)
+        tech_level = inferred.get("technical_complexity_level", "medium")
+        reg_level = inferred.get("regulatory_risk_level", "medium")
+        tech_numeric = map_complexity_to_numeric(tech_level)
+        reg_numeric = map_regulatory_to_numeric(reg_level)
+        pricing = map_revenue_model_to_pricing(norm_rev_model)
+
+        # Persist inferred values to Idea model
+        idea.revenue_model = norm_rev_model
+        idea.pricing_estimate = pricing
+        idea.tech_complexity = tech_numeric
+        idea.regulatory_risk = reg_numeric
+        idea.inferred_revenue_model = raw_rev_model
+        idea.inferred_tech_level = tech_level
+        idea.inferred_reg_level = reg_level
+        idea.inferred_problem_keywords = ",".join(inferred.get("core_problem_keywords", []))
+        idea.inferred_market_keywords = ",".join(inferred.get("market_keywords", []))
+        db.commit()
+        db.refresh(idea)
+        print(f"✅ [EVALUATION] Inferred: rev={norm_rev_model}, tech={tech_level}→{tech_numeric}, reg={reg_level}→{reg_numeric}")
+
+        # ── 3. Build QueryBundle ─────────────────────────────────────────
+        logger.info("Pipeline step 3: Building query bundle")
         query_bundle = build_query_bundle(idea)
 
-        # ── 3-5. Fetch all signals IN PARALLEL ────────────────────────
-        logger.info("Pipeline steps 3-5: Fetching all signals in parallel")
+        # ── 4-6. Fetch all signals IN PARALLEL ────────────────────────
+        logger.info("Pipeline steps 4-6: Fetching all signals in parallel")
         t_start = time.perf_counter()
 
         problem_task = fetch_problem_intensity_signals(idea)

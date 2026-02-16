@@ -25,7 +25,7 @@ import httpx
 
 from ..schemas.query_schema import QueryBundle
 from ..schemas.competitor_schema import CompetitorSignals
-from .competitor_normalizer import normalize_competitor_list
+from .competitor_cleaner import clean_competitors, hard_filter_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +96,19 @@ def _extract_domain(url: str) -> str:
     return match.group(1) if match else ""
 
 
+_EXCLUDED_URL_PATTERNS: tuple[str, ...] = (
+    "/blog", "/news", "/article", "/press", "/media",
+    "/resources/", "/insights/", "/learn/", "/guides/",
+)
+
+
 def _is_excluded(url: str) -> bool:
-    """Return True if the URL belongs to an excluded domain."""
+    """Return True if the URL belongs to an excluded domain or path."""
     domain = _extract_domain(url)
-    return any(excl in domain for excl in _EXCLUDED_DOMAINS)
+    if any(excl in domain for excl in _EXCLUDED_DOMAINS):
+        return True
+    url_lower = url.lower()
+    return any(pat in url_lower for pat in _EXCLUDED_URL_PATTERNS)
 
 
 def _extract_company_name(title: str, url: str) -> str:
@@ -312,11 +321,10 @@ async def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSigna
     print(f"📄 [EXA] Total raw results across all queries: {len(raw_results)}")
 
     # ------------------------------------------------------------------ #
-    #  2. Deduplicate by domain, filter excluded sites, validate titles   #
+    #  2. Build enriched candidate list for shared cleaner                 #
     # ------------------------------------------------------------------ #
     seen_domains: set[str] = set()
     competitors: List[Dict[str, Any]] = []
-    filtered_titles: List[str] = []
 
     for result in raw_results:
         url = result.get("url", "")
@@ -324,7 +332,6 @@ async def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSigna
             continue
 
         if _is_excluded(url):
-            filtered_titles.append(result.get("title", "<no title>") + " [excluded domain]")
             continue
 
         domain = _extract_domain(url)
@@ -333,49 +340,38 @@ async def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSigna
         seen_domains.add(domain)
 
         title = result.get("title", "")
-
-        if not is_valid_competitor(title, domain):
-            filtered_titles.append(title or "<no title>")
-            continue
-
         text = result.get("text", "")
         highlights = result.get("highlights", [])
         description = (text[:500] if text else "") + " " + " ".join(highlights or [])
-
-        name = _extract_company_name(title, url)
         founding_year = _extract_founding_year(description)
 
-        competitors.append(
-            {
-                "name": name,
-                "domain": domain,
-                "description": description.strip(),
-                "founding_year": founding_year,
-            }
-        )
-
-    if filtered_titles:
-        print(f"🚫 [EXA] Filtered out {len(filtered_titles)} results:")
-        for ft in filtered_titles[:10]:
-            print(f"   • {ft}")
+        competitors.append({
+            "title": title,
+            "url": url,
+            "domain": domain,
+            "text": text,
+            "description": description.strip(),
+            "founding_year": founding_year,
+        })
 
     if not competitors:
-        print("⚠️ [EXA] No valid competitors after filtering — query may be too broad")
-        logger.info("No competitors discovered for the given queries.")
+        print("⚠️ [EXA] No results after domain dedup — returning empty signals")
         return _empty_signals()
 
     # ------------------------------------------------------------------ #
-    #  3. Compute metrics                                                 #
+    #  3. Run shared competitor cleaner (hard filter + OpenAI + safety)    #
+    # ------------------------------------------------------------------ #
+    industry = " ".join(query_bundle.industry_tags) if query_bundle.industry_tags else ""
+    unique_names = await clean_competitors(competitors, industry=industry)
+
+    if not unique_names:
+        print("⚠️ [COMP] Cleaner returned 0 names — returning empty signals")
+        return _empty_signals()
+
+    # ------------------------------------------------------------------ #
+    #  4. Compute metrics                                                 #
     # ------------------------------------------------------------------ #
     total_competitors = len(competitors)
-
-    # Unique names — normalize to max 2 words, dedupe, cap at 8
-    raw_names: List[str] = []
-    for comp in competitors:
-        name = comp["name"].strip()
-        if name.lower() != "unknown":
-            raw_names.append(name)
-    unique_names = normalize_competitor_list(raw_names)
 
     # avg_company_age — only from competitors with a detected founding year
     current_year = datetime.now().year

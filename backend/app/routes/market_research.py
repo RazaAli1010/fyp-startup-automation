@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..agents.market_research_agent.agent import run_market_research
+from ..constants import CUSTOMER_TYPE_TO_SIZE, DEFAULT_TEAM_SIZE, DEFAULT_PRICING_FALLBACK
 from ..database import get_db
 from ..models.idea import Idea
 from ..models.market_research import MarketResearch
@@ -122,10 +123,10 @@ async def generate_research(
             industry=idea.industry,
             target_customer_type=idea.target_customer_type,
             geography=idea.geography,
-            customer_size=idea.customer_size,
-            revenue_model=idea.revenue_model,
-            pricing_estimate=idea.pricing_estimate,
-            team_size=idea.team_size,
+            customer_size=idea.customer_size or CUSTOMER_TYPE_TO_SIZE.get(idea.target_customer_type, "SMB"),
+            revenue_model=idea.revenue_model or "Subscription",
+            pricing_estimate=idea.pricing_estimate if idea.pricing_estimate else DEFAULT_PRICING_FALLBACK,
+            team_size=idea.team_size if idea.team_size else DEFAULT_TEAM_SIZE,
         )
         elapsed = time.perf_counter() - t_start
         print(f"✅ [MARKET] Market research agent complete in {elapsed:.2f}s")
