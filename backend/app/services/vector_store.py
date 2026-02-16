@@ -386,6 +386,65 @@ def query_by_idea(
     return items
 
 
+async def _embed_texts_async(texts: List[str]) -> List[List[float]]:
+    """Async version of _embed_texts — non-blocking OpenAI embeddings call."""
+    api_key = _get_openai_key()
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": _EMBEDDING_MODEL,
+        "input": texts,
+    }
+    async with httpx.AsyncClient(timeout=_EMBEDDING_TIMEOUT) as client:
+        response = await client.post(
+            _OPENAI_EMBEDDINGS_URL,
+            headers=headers,
+            json=payload,
+        )
+    if response.status_code != 200:
+        logger.error("[VECTOR] Embedding API error: %s", response.text[:300])
+        raise RuntimeError(f"Embedding API returned {response.status_code}")
+
+    data = response.json()
+    embeddings = [item["embedding"] for item in data["data"]]
+    return embeddings
+
+
+async def embed_single_async(text: str) -> List[float]:
+    """Async version of embed_single."""
+    result = await _embed_texts_async([text])
+    return result[0]
+
+
+async def index_chunks_async(chunks: List[Dict[str, Any]]) -> int:
+    """Async version of index_chunks — embed via async, upsert into ChromaDB."""
+    if not chunks:
+        return 0
+
+    collection = get_collection()
+    texts = [c["text"] for c in chunks]
+    ids = [c["id"] for c in chunks]
+    metadatas = [c["metadata"] for c in chunks]
+
+    try:
+        embeddings = await _embed_texts_async(texts)
+    except Exception as exc:
+        logger.error("[VECTOR] Embedding failed, skipping indexing: %s", exc)
+        return 0
+
+    collection.upsert(
+        ids=ids,
+        embeddings=embeddings,
+        documents=texts,
+        metadatas=metadatas,
+    )
+
+    print(f"🗄️  [VECTOR] Indexed {len(chunks)} chunks (async)")
+    return len(chunks)
+
+
 def get_indexed_agents(idea_id: str) -> List[str]:
     """Return list of agent names that have indexed data for this idea."""
     collection = get_collection()

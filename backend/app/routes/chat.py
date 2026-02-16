@@ -68,7 +68,7 @@ class ChatStatusResponse(BaseModel):
     summary="Ask AI Co-Founder",
     response_description="RAG-powered answer grounded in agent outputs",
 )
-def ask_chat(
+async def ask_chat(
     idea_id: UUID,
     body: ChatRequest,
     db: Session = Depends(get_db),
@@ -90,7 +90,7 @@ def ask_chat(
 
     print(f"💬 [CHAT] Question for idea {idea_id}: {body.question[:80]}...")
 
-    result = ask_co_founder(
+    result = await ask_co_founder(
         idea_id=str(idea_id),
         question=body.question,
     )

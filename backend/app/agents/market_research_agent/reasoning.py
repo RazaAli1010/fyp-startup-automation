@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...services.openai_client import call_openai_chat, get_openai_key, validate_required_keys
+from ...services.openai_client import call_openai_chat_async, get_openai_key, validate_required_keys
 
 # ---------------------------------------------------------------------------
 # System prompt — hardened for anti-vague, practical, bounded outputs.
@@ -76,13 +76,13 @@ Return ONLY this exact JSON structure. No other text.
 }}"""
 
 
-def _call_openai(user_prompt: str) -> dict[str, Any] | None:
-    """Call OpenAI via centralized helper and return parsed JSON dict or None."""
+async def _call_openai(user_prompt: str) -> dict[str, Any] | None:
+    """Call OpenAI via centralized async helper and return parsed JSON dict or None."""
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
-    return call_openai_chat(
+    return await call_openai_chat_async(
         messages=messages,
         max_completion_tokens=4000,
     )
@@ -117,7 +117,7 @@ def _build_fallback_result(
     }
 
 
-def run_reasoning(
+async def run_reasoning(
     *,
     research_text: list[str],
     competitor_count: int,
@@ -172,7 +172,7 @@ def run_reasoning(
         one_line_description=one_line_description,
     )
 
-    result = _call_openai(user_prompt)
+    result = await _call_openai(user_prompt)
 
     if result is None:
         return _build_fallback_result(

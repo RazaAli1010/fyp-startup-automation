@@ -12,7 +12,9 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import List
 from uuid import UUID
@@ -38,7 +40,7 @@ from ..services.trend_agent import fetch_trend_demand_signals
 from ..services.competitor_agent import fetch_competitor_signals
 from ..services.normalization_engine import normalize_signals
 from ..services.scoring_engine import compute_scores
-from ..services.vector_store import chunk_pitch_deck, index_chunks
+from ..services.vector_store import chunk_pitch_deck, index_chunks_async
 
 logger = logging.getLogger(__name__)
 
@@ -76,27 +78,30 @@ def _empty_competitor() -> CompetitorSignals:
     )
 
 
-def _run_evaluation(idea: Idea) -> tuple[ModuleScores, dict[str, str]]:
-    """Run the full evaluation pipeline and return (scores, summary)."""
+async def _run_evaluation(idea: Idea) -> tuple[ModuleScores, dict[str, str]]:
+    """Run the full evaluation pipeline with parallel signal fetching."""
     query_bundle = build_query_bundle(idea)
 
-    try:
-        problem_signals = fetch_problem_intensity_signals(idea)
-    except Exception as exc:
-        logger.warning("Problem intensity agent failed: %s — using empty signals", exc)
-        problem_signals = _empty_problem()
+    t_start = time.perf_counter()
+    results = await asyncio.gather(
+        fetch_problem_intensity_signals(idea),
+        fetch_trend_demand_signals(query_bundle),
+        fetch_competitor_signals(query_bundle),
+        return_exceptions=True,
+    )
+    elapsed = time.perf_counter() - t_start
+    logger.info("[PITCH-DECK] Parallel eval fetch completed in %.2fs", elapsed)
 
-    try:
-        trend_signals = fetch_trend_demand_signals(query_bundle)
-    except Exception as exc:
-        logger.warning("Trend agent failed: %s — using empty signals", exc)
-        trend_signals = _empty_trend()
+    problem_signals = results[0] if not isinstance(results[0], Exception) else _empty_problem()
+    trend_signals = results[1] if not isinstance(results[1], Exception) else _empty_trend()
+    competitor_signals = results[2] if not isinstance(results[2], Exception) else _empty_competitor()
 
-    try:
-        competitor_signals = fetch_competitor_signals(query_bundle)
-    except Exception as exc:
-        logger.warning("Competitor agent failed: %s — using empty signals", exc)
-        competitor_signals = _empty_competitor()
+    if isinstance(results[0], Exception):
+        logger.warning("Problem intensity agent failed: %s — using empty signals", results[0])
+    if isinstance(results[1], Exception):
+        logger.warning("Trend agent failed: %s — using empty signals", results[1])
+    if isinstance(results[2], Exception):
+        logger.warning("Competitor agent failed: %s — using empty signals", results[2])
 
     normalized = normalize_signals(
         problem=problem_signals,
@@ -165,7 +170,7 @@ def _record_to_response(record: PitchDeck) -> PitchDeckRecord:
     summary="Generate a Pitch Deck",
     response_description="Pitch deck record with status and URLs",
 )
-def generate_deck(
+async def generate_deck(
     idea_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -218,7 +223,7 @@ def generate_deck(
     # 3. Run evaluation pipeline
     print(f"🔄 [PITCH-DECK] Running evaluation pipeline for idea {idea_id}")
     try:
-        scores, summary = _run_evaluation(idea)
+        scores, summary = await _run_evaluation(idea)
         print(f"✅ [PITCH-DECK] Evaluation complete — score={scores.final_viability_score:.1f}")
     except Exception as exc:
         print(f"❌ [PITCH-DECK] Evaluation pipeline FAILED: {exc}")
@@ -234,7 +239,7 @@ def generate_deck(
     # 4. Generate pitch deck via Alai API
     print(f"🚀 [PITCH-DECK] Calling Alai Slides API")
     try:
-        deck = generate_pitch_deck(
+        deck = await generate_pitch_deck(
             idea_name=idea.startup_name,
             idea_description=idea.one_line_description,
             idea_industry=idea.industry,
@@ -302,7 +307,7 @@ def generate_deck(
             "view_url": deck.view_url,
         }
         chunks = chunk_pitch_deck(str(idea_id), deck_data)
-        index_chunks(chunks)
+        await index_chunks_async(chunks)
     except Exception as exc:
         logger.warning("Vector indexing failed (non-blocking): %s", exc)
 

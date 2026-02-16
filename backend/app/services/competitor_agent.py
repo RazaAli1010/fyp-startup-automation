@@ -14,6 +14,7 @@ Rules
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -203,8 +204,8 @@ def _jaccard(set_a: set[str], set_b: set[str]) -> float:
     return len(intersection) / len(union)
 
 
-def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
-    """Run a single Exa semantic search with retry logic.
+async def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
+    """Run a single Exa semantic search with retry logic (async).
 
     Returns a list of result dicts or an empty list on failure.
     """
@@ -226,12 +227,12 @@ def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
 
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            response = httpx.post(
-                _EXA_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=_REQUEST_TIMEOUT,
-            )
+            async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+                response = await client.post(
+                    _EXA_API_URL,
+                    headers=headers,
+                    json=payload,
+                )
             print(f"📦 [EXA] HTTP {response.status_code} for query={query!r}")
             if response.status_code == 200:
                 results = response.json().get("results", [])
@@ -258,8 +259,7 @@ def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
             return []
 
         if attempt < _MAX_RETRIES:
-            import time as _time
-            _time.sleep(_INITIAL_BACKOFF * (2 ** attempt))
+            await asyncio.sleep(_INITIAL_BACKOFF * (2 ** attempt))
 
     print(f"⚠️ [EXA] All retries exhausted for query={query!r}")
     return []
@@ -269,8 +269,8 @@ def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
 #  Public API                                                             #
 # ===================================================================== #
 
-def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSignals:
-    """Discover competitors via Exa and return structured signals.
+async def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSignals:
+    """Discover competitors via Exa and return structured signals (async).
 
     Parameters
     ----------
@@ -286,7 +286,7 @@ def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSignals:
     # Cap to exactly 5 queries (shared builder guarantees 5)
     queries = query_bundle.competitor_queries[:5]
 
-    print(f"🔎 [COMP] Running {len(queries)} Exa competitor queries")
+    print(f"🔎 [COMP] Running {len(queries)} Exa competitor queries in parallel")
 
     try:
         api_key = _get_exa_key()
@@ -295,21 +295,19 @@ def fetch_competitor_signals(query_bundle: QueryBundle) -> CompetitorSignals:
         return _empty_signals()
 
     # ------------------------------------------------------------------ #
-    #  1. Fetch results for every competitor query                        #
+    #  1. Fetch results for all competitor queries in parallel            #
     # ------------------------------------------------------------------ #
+    tasks = [_search_exa(api_key, q) for q in queries]
+    query_results = await asyncio.gather(*tasks, return_exceptions=True)
+
     raw_results: List[Dict[str, Any]] = []
-    exa_failed = False
-    for i, query in enumerate(queries, 1):
-        print(f"\n🔎 [EXA] Executing query {i}/{len(queries)}...")
-        results = _search_exa(api_key, query)
-        if results is None:
-            results = []
-        raw_results.extend(results)
-        # If first query returns empty due to quota, skip remaining
-        if i == 1 and len(results) == 0:
-            print("⚠️ [EXA] First query returned 0 results — likely quota issue, skipping remaining")
-            exa_failed = True
-            break
+    for i, result in enumerate(query_results):
+        if isinstance(result, Exception):
+            print(f"⚠️ [EXA] Query {i+1} failed: {result}")
+            continue
+        if result is None:
+            continue
+        raw_results.extend(result)
 
     print(f"📄 [EXA] Total raw results across all queries: {len(raw_results)}")
 

@@ -13,6 +13,7 @@ Rules
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import statistics
@@ -52,7 +53,7 @@ def _get_serpapi_key() -> str:
     return key
 
 
-def _fetch_timeseries(api_key: str, keyword: str, geo: str = "") -> List[int]:
+async def _fetch_timeseries(api_key: str, keyword: str, geo: str = "") -> List[int]:
     """Fetch Google Trends TIMESERIES for *keyword* and return raw values.
 
     Returns an empty list on any failure so the caller can skip the keyword
@@ -72,11 +73,11 @@ def _fetch_timeseries(api_key: str, keyword: str, geo: str = "") -> List[int]:
 
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            response = httpx.get(
-                _SERPAPI_BASE_URL,
-                params=params,
-                timeout=_REQUEST_TIMEOUT,
-            )
+            async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+                response = await client.get(
+                    _SERPAPI_BASE_URL,
+                    params=params,
+                )
             print(f"📦 [SerpAPI] HTTP {response.status_code} for keyword={keyword!r}")
             if response.status_code == 200:
                 data = response.json()
@@ -117,8 +118,7 @@ def _fetch_timeseries(api_key: str, keyword: str, geo: str = "") -> List[int]:
 
         # Exponential back-off before retry
         if attempt < _MAX_RETRIES:
-            import time as _time
-            _time.sleep(_INITIAL_BACKOFF * (2 ** attempt))
+            await asyncio.sleep(_INITIAL_BACKOFF * (2 ** attempt))
 
     print(f"⚠️ [SerpAPI] All retries exhausted for keyword={keyword!r}")
     return []
@@ -202,7 +202,7 @@ def _demand_strength(avg_volume: float, growth_rate: float) -> float:
     return max(0.0, min(1.0, raw))
 
 
-def _fetch_search_demand_proxy(
+async def _fetch_search_demand_proxy(
     api_key: str, keyword: str, geo: str = ""
 ) -> float:
     """Fetch a demand proxy from a regular Google search via SerpAPI.
@@ -225,11 +225,11 @@ def _fetch_search_demand_proxy(
     print(f"\U0001f50d [SerpAPI] Fetching search demand proxy for keyword={keyword!r}")
 
     try:
-        response = httpx.get(
-            _SERPAPI_BASE_URL,
-            params=params,
-            timeout=_REQUEST_TIMEOUT,
-        )
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            response = await client.get(
+                _SERPAPI_BASE_URL,
+                params=params,
+            )
         if response.status_code != 200:
             print(f"\u26a0\ufe0f [SerpAPI] Demand proxy HTTP {response.status_code} for keyword={keyword!r}")
             return 0.0
@@ -265,16 +265,22 @@ def _fetch_search_demand_proxy(
 #  Public API                                                             #
 # ===================================================================== #
 
-def _try_keywords(api_key: str, keywords: List[str]) -> List[List[int]]:
-    """Fetch timeseries for each keyword and return per-keyword value lists.
+async def _try_keywords(api_key: str, keywords: List[str]) -> List[List[int]]:
+    """Fetch timeseries for all keywords in parallel and return per-keyword value lists.
 
     Only keywords that return data are included in the result.
     """
+    tasks = [_fetch_timeseries(api_key, kw) for kw in keywords]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     per_keyword: List[List[int]] = []
-    for keyword in keywords:
-        values = _fetch_timeseries(api_key, keyword)
-        if values:
-            per_keyword.append(values)
+    for keyword, result in zip(keywords, results):
+        if isinstance(result, Exception):
+            print(f"⚠️ [SerpAPI] Error for keyword={keyword!r}: {result}")
+            logger.warning("SerpAPI error for keyword=%r: %s", keyword, result)
+            continue
+        if result:
+            per_keyword.append(result)
         else:
             print(f"⚠️ [SerpAPI] No trend data for keyword={keyword!r} — skipping")
             logger.info("No trend data for keyword=%r — skipping.", keyword)
@@ -300,7 +306,7 @@ def _is_usable(avg_vol: float, growth: float, momentum: float) -> bool:
     return demand > 0 or growth != 0.0 or momentum != 0.5
 
 
-def fetch_trend_demand_signals(query_bundle: QueryBundle) -> TrendDemandSignals:
+async def fetch_trend_demand_signals(query_bundle: QueryBundle) -> TrendDemandSignals:
     """Query SerpAPI and return quantifiable trend & demand signals.
 
     Uses a multi-stage keyword fallback:
@@ -351,7 +357,7 @@ def fetch_trend_demand_signals(query_bundle: QueryBundle) -> TrendDemandSignals:
     for tier_name, keywords in tiers:
         print(f"🔍 [SerpAPI] Trying {tier_name.replace('_', ' ').title()} keywords: {keywords}")
 
-        per_keyword_values = _try_keywords(api_key, keywords)
+        per_keyword_values = await _try_keywords(api_key, keywords)
 
         if not per_keyword_values:
             print(f"⚠️ [SerpAPI] {tier_name} — no data returned")
@@ -396,11 +402,14 @@ def fetch_trend_demand_signals(query_bundle: QueryBundle) -> TrendDemandSignals:
     # ------------------------------------------------------------------ #
     if demand < 0.05:
         print("⚠️ [SerpAPI] Trends-based demand very low — trying search demand proxy")
+        proxy_tasks = [_fetch_search_demand_proxy(api_key, kw) for kw in query_bundle.trend_keywords[:2]]
+        proxy_results = await asyncio.gather(*proxy_tasks, return_exceptions=True)
         proxies: List[float] = []
-        for keyword in query_bundle.trend_keywords[:2]:
-            proxy = _fetch_search_demand_proxy(api_key, keyword)
-            if proxy > 0:
-                proxies.append(proxy)
+        for pr in proxy_results:
+            if isinstance(pr, Exception):
+                continue
+            if pr > 0:
+                proxies.append(pr)
 
         if proxies:
             search_proxy = sum(proxies) / len(proxies)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import List
 from uuid import UUID
@@ -24,7 +25,7 @@ from ..models.market_research import MarketResearch
 from ..models.user import User
 from ..schemas.market_research_schema import MarketResearchRecord, MarketResearchListResponse
 from ..services.auth_dependency import get_current_user
-from ..services.vector_store import chunk_market_research, index_chunks
+from ..services.vector_store import chunk_market_research, index_chunks_async
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def _record_to_response(record: MarketResearch) -> MarketResearchRecord:
     summary="Generate Market Research",
     response_description="Market research record with TAM/SAM/SOM and confidence",
 )
-def generate_research(
+async def generate_research(
     idea_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -113,8 +114,9 @@ def generate_research(
 
     # 3. Run market research agent
     print(f"🔄 [MARKET] Running market research agent for idea {idea_id}")
+    t_start = time.perf_counter()
     try:
-        result = run_market_research(
+        result = await run_market_research(
             startup_name=idea.startup_name,
             one_line_description=idea.one_line_description,
             industry=idea.industry,
@@ -125,7 +127,8 @@ def generate_research(
             pricing_estimate=idea.pricing_estimate,
             team_size=idea.team_size,
         )
-        print("✅ [MARKET] Market research agent complete")
+        elapsed = time.perf_counter() - t_start
+        print(f"✅ [MARKET] Market research agent complete in {elapsed:.2f}s")
     except Exception as exc:
         print(f"❌ [MARKET] Agent FAILED: {exc}")
         db_record.status = "failed"
@@ -178,7 +181,7 @@ def generate_research(
             "competitor_count": result.competitor_count,
         }
         chunks = chunk_market_research(str(idea_id), mr_data)
-        index_chunks(chunks)
+        await index_chunks_async(chunks)
     except Exception as exc:
         logger.warning("Vector indexing failed (non-blocking): %s", exc)
 

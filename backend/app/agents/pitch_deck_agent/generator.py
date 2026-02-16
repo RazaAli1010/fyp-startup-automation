@@ -83,7 +83,7 @@ def _build_input_text(ctx: PitchDeckInput) -> str:
 
 # ── Public entry point ───────────────────────────────────────────────────
 
-def generate_pitch_deck(
+async def generate_pitch_deck(
     *,
     idea_name: str,
     idea_description: str,
@@ -155,7 +155,7 @@ def generate_pitch_deck(
 
     # ── Call Alai Slides API ─────────────────────────────────
     print("🎯 [PITCH] Calling Alai Slides API client")
-    result = generate_pitch_deck_via_alai(
+    result = await generate_pitch_deck_via_alai(
         input_text=input_text,
         deck_title=idea_name,
     )

@@ -6,9 +6,11 @@ using Tavily's advanced search. Returns clean text passages only.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
-from typing import Any
+import logging
+from typing import List, Dict, Any
 
 import httpx
 
@@ -93,43 +95,35 @@ def _build_queries(
     return queries
 
 
-def _search_tavily(api_key: str, query: str) -> list[dict[str, Any]]:
-    """Execute a single Tavily advanced search. Returns result dicts or []."""
+async def _search_tavily(api_key: str, query: str) -> List[Dict[str, Any]]:
+    """Execute a single Tavily search (async) and return result dicts."""
     payload = {
         "api_key": api_key,
         "query": query,
         "search_depth": "advanced",
         "max_results": _MAX_RESULTS_PER_QUERY,
-        "include_answer": True,
+        "include_answer": False,
     }
-
     try:
-        print(f"🔍 [TAVILY] Searching: {query!r}")
-        response = httpx.post(
-            _TAVILY_API_URL,
-            json=payload,
-            timeout=_REQUEST_TIMEOUT,
-        )
-        print(f"📦 [TAVILY] HTTP {response.status_code} for query={query!r}")
-
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            response = await client.post(_TAVILY_API_URL, json=payload)
         if response.status_code == 200:
             data = response.json()
             results = data.get("results", [])
-            print(f"📄 [TAVILY] Got {len(results)} results for query={query!r}")
+            print(f"\U0001f4e6 [MR] Tavily: {len(results)} results for {query!r}")
             return results
         else:
-            print(f"⚠️  [TAVILY] Non-200 response: {response.status_code}")
+            print(f"\u26a0\ufe0f [MR] Tavily HTTP {response.status_code} for {query!r}")
             return []
-
     except httpx.TimeoutException:
-        print(f"⚠️  [TAVILY] Timeout for query={query!r}")
+        print(f"\u26a0\ufe0f [MR] Tavily timeout for {query!r}")
         return []
     except Exception as exc:
-        print(f"❌ [TAVILY] Error for query={query!r}: {exc}")
+        print(f"\u274c [MR] Tavily error for {query!r}: {exc}")
         return []
 
 
-def fetch_market_research_text(query_bundle: dict) -> list[str]:
+async def fetch_market_research_text(query_bundle: dict) -> list[str]:
     """Fetch market research passages via Tavily advanced search.
 
     Parameters
@@ -162,9 +156,14 @@ def fetch_market_research_text(query_bundle: dict) -> list[str]:
     seen_urls: set[str] = set()
     numeric_passage_count = 0
 
-    for query in queries:
-        results = _search_tavily(api_key, query)
-        for result in results:
+    # Run all Tavily queries in parallel
+    tasks = [_search_tavily(api_key, q) for q in queries]
+    query_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for query_result in query_results:
+        if isinstance(query_result, Exception):
+            continue
+        for result in query_result:
             url = result.get("url", "")
             if url in seen_urls:
                 continue

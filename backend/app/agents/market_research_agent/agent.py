@@ -14,6 +14,7 @@ No personas. If any step fails, agent continues with degraded confidence — nev
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -175,7 +176,7 @@ def _build_sources(
     return sources
 
 
-def run_market_research(
+async def run_market_research(
     *,
     startup_name: str,
     one_line_description: str,
@@ -187,52 +188,63 @@ def run_market_research(
     pricing_estimate: float,
     team_size: int,
 ) -> MarketResearchResult:
-    """Run the full market research pipeline (v2).
+    """Run the full market research pipeline (v2, async).
 
-    1. Fetch Tavily research text
-    2. Fetch Exa competitors
-    3. Call OpenAI reasoning (no personas)
-    4. Run deterministic TAM/SAM/SOM calculator
-    5. Return unified result
+    1. Fetch Tavily research text + Exa competitors IN PARALLEL
+    2. Call OpenAI reasoning (depends on step 1 results)
+    3. Run deterministic TAM/SAM/SOM calculator
+    4. Return unified result
     """
-    print(f"🔬 [MR] Pipeline START: {startup_name} | {industry} | {geography} | {target_customer_type}")
+    print(f" [MR] Pipeline START: {startup_name} | {industry} | {geography} | {target_customer_type}")
 
-    # ── Step 1: Fetch Tavily research text ─────────────────────
-    print("🔬 [MR] Step 1/4: Tavily research text")
-    try:
-        research_passages = fetch_market_research_text({
-            "industry": industry,
-            "one_line_description": one_line_description,
-            "geography": geography,
-            "startup_name": startup_name,
-            "target_customer_type": target_customer_type,
-        })
-    except Exception as exc:
-        print(f"⚠️  [MR] Tavily failed: {exc}")
-        research_passages = []
-    has_tavily = len(research_passages) > 0
-    print(f"{'✅' if has_tavily else '⚠️ '} [MR] Tavily: {len(research_passages)} passages")
+    # ── Steps 1 & 2: Fetch Tavily + Exa IN PARALLEL ─────────
+    print(" [MR] Steps 1-2/4: Tavily + Exa in parallel")
 
-    # ── Step 2: Fetch Exa competitors ──────────────────────────
-    try:
-        exa_result = fetch_competitors({
-            "startup_name": startup_name,
-            "one_line_description": one_line_description,
-            "industry": industry,
-            "target_customer_type": target_customer_type,
-            "revenue_model": revenue_model,
-        })
-    except Exception as exc:
-        print(f"⚠️  [MR] Exa failed: {exc}")
+    async def _tavily_task() -> list[str]:
+        try:
+            return await fetch_market_research_text({
+                "industry": industry,
+                "one_line_description": one_line_description,
+                "geography": geography,
+                "startup_name": startup_name,
+                "target_customer_type": target_customer_type,
+            })
+        except Exception as exc:
+            print(f" [MR] Tavily failed: {exc}")
+            return []
+
+    async def _exa_task() -> dict:
+        try:
+            return await fetch_competitors({
+                "startup_name": startup_name,
+                "one_line_description": one_line_description,
+                "industry": industry,
+                "target_customer_type": target_customer_type,
+                "revenue_model": revenue_model,
+            })
+        except Exception as exc:
+            print(f" [MR] Exa failed: {exc}")
+            return {"competitors": [], "competitor_count": 0}
+
+    tavily_result, exa_result = await asyncio.gather(
+        _tavily_task(),
+        _exa_task(),
+        return_exceptions=True,
+    )
+
+    research_passages = tavily_result if isinstance(tavily_result, list) else []
+    if isinstance(exa_result, Exception):
         exa_result = {"competitors": [], "competitor_count": 0}
+    has_tavily = len(research_passages) > 0
     competitors = exa_result.get("competitors", [])
     competitor_count = exa_result.get("competitor_count", 0)
     has_exa = competitor_count > 0
-    print(f"{'✅' if has_exa else '⚠️ '} [MR] Exa: {competitor_count} competitors")
+    print(f"{'' if has_tavily else ''} [MR] Tavily: {len(research_passages)} passages")
+    print(f"{'' if has_exa else ''} [MR] Exa: {competitor_count} competitors")
 
-    # ── Step 3: Call OpenAI reasoning ──────────────────────────
+    # ── Step 3: Call OpenAI reasoning (depends on Tavily + Exa results) ─
     try:
-        reasoning = run_reasoning(
+        reasoning = await run_reasoning(
             research_text=research_passages,
             competitor_count=competitor_count,
             pricing_estimate=pricing_estimate,

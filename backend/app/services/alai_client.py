@@ -8,11 +8,12 @@ Reads configuration from environment variables:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Any
 
-import requests
+import httpx
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
@@ -41,7 +42,7 @@ class AlaiError(Exception):
     """Raised when the Alai API returns an error or is unavailable."""
 
 
-def generate_pitch_deck_via_alai(
+async def generate_pitch_deck_via_alai(
     *,
     input_text: str,
     deck_title: str,
@@ -74,7 +75,7 @@ def generate_pitch_deck_via_alai(
         print("❌ [ALAI] API key is MISSING — cannot proceed")
         raise AlaiError("Alai API key missing — pitch deck generation unavailable")
 
-    # ── STEP 1: Create generation ────────────────────────────
+    # ── STEP 1: Create generation ────────────────────────
     payload = {
         "input_text": input_text,
         "presentation_options": {
@@ -87,16 +88,16 @@ def generate_pitch_deck_via_alai(
     print(f"🚀 [ALAI] Generation started — title={deck_title}")
 
     try:
-        response = requests.post(
-            f"{ALAI_BASE_URL}/generations",
-            headers={"Authorization": f"Bearer {ALAI_API_KEY}"},
-            json=payload,
-            timeout=30,
-        )
-    except requests.exceptions.Timeout as exc:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{ALAI_BASE_URL}/generations",
+                headers={"Authorization": f"Bearer {ALAI_API_KEY}"},
+                json=payload,
+            )
+    except httpx.TimeoutException as exc:
         print("❌ [ALAI] Create request TIMED OUT")
         raise AlaiError("Alai generation create request timed out") from exc
-    except requests.exceptions.RequestException as exc:
+    except httpx.HTTPError as exc:
         print(f"❌ [ALAI] Create request FAILED: {exc}")
         raise AlaiError(f"Alai generation create request failed: {exc}") from exc
 
@@ -117,41 +118,41 @@ def generate_pitch_deck_via_alai(
 
     print(f"🚀 [ALAI] Generation created — generation_id={generation_id}")
 
-    # ── STEP 2: Poll generation status ───────────────────────
+    # ── STEP 2: Poll generation status (async) ───────────────
 
     status_json: dict[str, Any] = {}
     completed = False
 
-    for poll_attempt in range(20):  # max ~60 seconds
-        try:
-            status_response = requests.get(
-                f"{ALAI_BASE_URL}/generations/{generation_id}",
-                headers={"Authorization": f"Bearer {ALAI_API_KEY}"},
-                timeout=15,
-            )
-        except requests.exceptions.RequestException as exc:
-            print(f"❌ [ALAI] Poll request failed (attempt {poll_attempt + 1}): {exc}")
-            raise AlaiError(f"Alai poll request failed: {exc}") from exc
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for poll_attempt in range(20):  # max ~60 seconds
+            try:
+                status_response = await client.get(
+                    f"{ALAI_BASE_URL}/generations/{generation_id}",
+                    headers={"Authorization": f"Bearer {ALAI_API_KEY}"},
+                )
+            except httpx.HTTPError as exc:
+                print(f"❌ [ALAI] Poll request failed (attempt {poll_attempt + 1}): {exc}")
+                raise AlaiError(f"Alai poll request failed: {exc}") from exc
 
-        try:
-            status_json = status_response.json()
-        except ValueError as exc:
-            print(f"❌ [ALAI] Poll response not valid JSON (attempt {poll_attempt + 1})")
-            raise AlaiError("Alai poll response is not valid JSON") from exc
+            try:
+                status_json = status_response.json()
+            except ValueError as exc:
+                print(f"❌ [ALAI] Poll response not valid JSON (attempt {poll_attempt + 1})")
+                raise AlaiError("Alai poll response is not valid JSON") from exc
 
-        current_status = status_json.get("status", "unknown")
-        print(f"� [ALAI] Polling generation_id={generation_id} — attempt {poll_attempt + 1}/20, status={current_status}")
+            current_status = status_json.get("status", "unknown")
+            print(f"🔄 [ALAI] Polling generation_id={generation_id} — attempt {poll_attempt + 1}/20, status={current_status}")
 
-        if current_status == "completed":
-            completed = True
-            break
+            if current_status == "completed":
+                completed = True
+                break
 
-        if current_status == "failed":
-            error_detail = status_json.get("error", "Unknown error")
-            print(f"❌ [ALAI] Generation FAILED: {error_detail}")
-            raise AlaiError(f"Alai generation failed: {error_detail}")
+            if current_status == "failed":
+                error_detail = status_json.get("error", "Unknown error")
+                print(f"❌ [ALAI] Generation FAILED: {error_detail}")
+                raise AlaiError(f"Alai generation failed: {error_detail}")
 
-        time.sleep(3)
+            await asyncio.sleep(3)
 
     if not completed:
         print("❌ [ALAI] Polling TIMED OUT after 20 attempts (~60s)")

@@ -25,7 +25,7 @@ from ..models.mvp_report import MVPReport
 from ..models.user import User
 from ..schemas.mvp_schema import MVPBlueprintResponse, MVPReportRecord, MVPReportListResponse
 from ..services.auth_dependency import get_current_user
-from ..services.vector_store import chunk_mvp, index_chunks
+from ..services.vector_store import chunk_mvp, index_chunks_async
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _extract_market_confidence(mr: MarketResearch) -> str:
     summary="Generate MVP Blueprint",
     response_description="MVP report with blueprint",
 )
-def generate_mvp(
+async def generate_mvp(
     idea_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -209,7 +209,7 @@ def generate_mvp(
     # Index for RAG chat
     try:
         chunks = chunk_mvp(str(idea_id), blueprint.model_dump())
-        index_chunks(chunks)
+        await index_chunks_async(chunks)
     except Exception as exc:
         logger.warning("Vector indexing failed (non-blocking): %s", exc)
 

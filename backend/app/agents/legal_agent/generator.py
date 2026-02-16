@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from ...services.openai_client import call_openai_chat, validate_required_keys
+from ...services.openai_client import call_openai_chat_async, validate_required_keys
 from .prompts import SYSTEM_PROMPT, PROMPT_BUILDERS
 from .rules import resolve_jurisdiction, validate_document_type
 from .schema import LegalDocumentOutput
@@ -30,7 +30,7 @@ _REQUIRED_KEYS = [
 ]
 
 
-def generate_legal_document(
+async def generate_legal_document(
     *,
     document_type: str,
     company_name: str,
@@ -111,7 +111,7 @@ def generate_legal_document(
     ]
 
     print(f"🧠 [LEGAL] Calling OpenAI (max_tokens={_LEGAL_MAX_TOKENS})")
-    result = call_openai_chat(
+    result = await call_openai_chat_async(
         messages=messages,
         max_completion_tokens=_LEGAL_MAX_TOKENS,
     )

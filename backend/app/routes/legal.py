@@ -29,7 +29,7 @@ from ..schemas.legal_schema import (
     LegalDocumentResponse,
 )
 from ..services.auth_dependency import get_current_user
-from ..services.vector_store import chunk_legal, index_chunks
+from ..services.vector_store import chunk_legal, index_chunks_async
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def _record_to_response(record: LegalDocument) -> LegalDocumentRecord:
     summary="Generate Legal Document",
     response_description="Legal document record with content",
 )
-def generate_legal(
+async def generate_legal(
     idea_id: UUID = Query(..., description="The idea to generate a legal document for"),
     body: GenerateLegalRequest = ...,
     db: Session = Depends(get_db),
@@ -162,7 +162,7 @@ def generate_legal(
 
     # ── Run legal document generator ─────────────────────────────
     try:
-        doc_output = generate_legal_document(
+        doc_output = await generate_legal_document(
             document_type=doc_type_key,
             company_name=company_name,
             industry=idea.industry,
@@ -193,7 +193,7 @@ def generate_legal(
     # Index for RAG chat
     try:
         chunks = chunk_legal(str(idea_id), doc_output.model_dump())
-        index_chunks(chunks)
+        await index_chunks_async(chunks)
     except Exception as exc:
         logger.warning("Vector indexing failed (non-blocking): %s", exc)
 

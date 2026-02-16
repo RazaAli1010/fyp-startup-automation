@@ -1,6 +1,7 @@
 """Centralized OpenAI client — GPT-4.1 stable configuration.
 
-All agents MUST use `call_openai_chat()` from this module.
+All agents MUST use `call_openai_chat()` (sync) or
+`call_openai_chat_async()` (async) from this module.
 This ensures:
   - Model, temperature, timeout, and token limits are read from env.
   - JSON response format is enforced via response_format.
@@ -243,6 +244,109 @@ def call_openai_chat(
                 return None
 
             # Sanitize: strip markdown fences, find JSON object
+            try:
+                sanitized = sanitize_json(raw_content)
+            except ValueError as ve:
+                print(f"❌ [OPENAI] JSON parse failed — retrying: {ve}")
+                print(f"⚠️  [OPENAI] Raw (first 300 chars): {raw_content[:300]}")
+                if attempt < max_retries:
+                    continue
+                return None
+
+            parsed = json.loads(sanitized)
+            print("🧠 [OPENAI] Success")
+            return parsed
+
+        except json.JSONDecodeError as exc:
+            print(f"❌ [OPENAI] JSON parse failed — retrying: {exc}")
+            if attempt < max_retries:
+                continue
+            return None
+
+        except httpx.TimeoutException:
+            duration = time.time() - t0
+            print(f"❌ [OPENAI] Timeout — aborting ({duration:.1f}s)")
+            if attempt < max_retries:
+                continue
+            return None
+
+        except Exception as exc:
+            print(f"❌ [OPENAI] Unexpected error: {exc}")
+            return None
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Async version — identical logic, non-blocking I/O
+# ---------------------------------------------------------------------------
+async def call_openai_chat_async(
+    *,
+    messages: List[Dict[str, str]],
+    max_completion_tokens: int = 0,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Async version of call_openai_chat. Same behaviour, non-blocking I/O."""
+    if api_key is None:
+        api_key = get_openai_key()
+    if model is None:
+        model = get_openai_model()
+    if max_completion_tokens <= 0:
+        max_completion_tokens = _get_default_max_tokens()
+
+    temperature = _get_temperature()
+    timeout = _get_timeout()
+    max_retries = 1
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    payload = build_payload(
+        model=model,
+        messages=messages,
+        max_completion_tokens=max_completion_tokens,
+        temperature=temperature,
+    )
+
+    for attempt in range(max_retries + 1):
+        t0 = time.time()
+        try:
+            print(f"🧠 [OPENAI] Calling {model} (attempt {attempt + 1}/{max_retries + 1})")
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    _OPENAI_API_URL,
+                    headers=headers,
+                    json=payload,
+                )
+            duration = time.time() - t0
+            print(f"📦 [OPENAI] HTTP {response.status_code} ({duration:.1f}s)")
+
+            if response.status_code != 200:
+                error_body = response.text[:400]
+                print(f"⚠️  [OPENAI] Error response: {error_body}")
+                if attempt < max_retries:
+                    print("🔄 [OPENAI] Retrying...")
+                    continue
+                return None
+
+            data = response.json()
+
+            usage = data.get("usage")
+            if usage:
+                print(f"🧠 [OPENAI] Tokens used: prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')}, total={usage.get('total_tokens', '?')}")
+
+            raw_content = (data["choices"][0]["message"]["content"] or "").strip()
+            print(f"🧠 [OPENAI] Raw output length: {len(raw_content)} chars")
+
+            if not raw_content:
+                print(f"⚠️  [OPENAI] Empty response (attempt {attempt + 1})")
+                if attempt < max_retries:
+                    continue
+                return None
+
             try:
                 sanitized = sanitize_json(raw_content)
             except ValueError as ve:

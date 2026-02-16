@@ -7,8 +7,10 @@ service functions.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -30,7 +32,7 @@ from ..services.trend_agent import fetch_trend_demand_signals
 from ..services.competitor_agent import fetch_competitor_signals
 from ..services.normalization_engine import normalize_signals
 from ..services.scoring_engine import compute_scores
-from ..services.vector_store import chunk_evaluation, index_chunks
+from ..services.vector_store import chunk_evaluation, index_chunks_async
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +127,7 @@ def _empty_competitor() -> CompetitorSignals:
     summary="Evaluate a Startup Idea",
     response_description="Full deterministic evaluation report",
 )
-def evaluate_idea(
+async def evaluate_idea(
     idea_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -159,29 +161,32 @@ def evaluate_idea(
         logger.info("Pipeline step 2: Building query bundle")
         query_bundle = build_query_bundle(idea)
 
-        # ── 3. Fetch ProblemIntensitySignals (Tavily + SerpAPI, no Reddit) ──
-        logger.info("Pipeline step 3: Fetching problem intensity signals")
-        try:
-            problem_signals = fetch_problem_intensity_signals(idea)
-        except Exception as exc:
-            logger.warning("Problem intensity agent failed: %s — using empty signals", exc)
-            problem_signals = _empty_problem()
+        # ── 3-5. Fetch all signals IN PARALLEL ────────────────────────
+        logger.info("Pipeline steps 3-5: Fetching all signals in parallel")
+        t_start = time.perf_counter()
 
-        # ── 4. Fetch TrendDemandSignals ──────────────────────────────────
-        logger.info("Pipeline step 4: Fetching trend demand signals")
-        try:
-            trend_signals = fetch_trend_demand_signals(query_bundle)
-        except Exception as exc:
-            logger.warning("Trend agent failed: %s — using empty signals", exc)
-            trend_signals = _empty_trend()
+        problem_task = fetch_problem_intensity_signals(idea)
+        trend_task = fetch_trend_demand_signals(query_bundle)
+        competitor_task = fetch_competitor_signals(query_bundle)
 
-        # ── 5. Fetch CompetitorSignals ───────────────────────────────────
-        logger.info("Pipeline step 5: Fetching competitor signals")
-        try:
-            competitor_signals = fetch_competitor_signals(query_bundle)
-        except Exception as exc:
-            logger.warning("Competitor agent failed: %s — using empty signals", exc)
-            competitor_signals = _empty_competitor()
+        results = await asyncio.gather(
+            problem_task, trend_task, competitor_task,
+            return_exceptions=True,
+        )
+
+        elapsed_parallel = time.perf_counter() - t_start
+        logger.info("[EVALUATION] Parallel fetch completed in %.2fs", elapsed_parallel)
+
+        problem_signals = results[0] if not isinstance(results[0], Exception) else _empty_problem()
+        trend_signals = results[1] if not isinstance(results[1], Exception) else _empty_trend()
+        competitor_signals = results[2] if not isinstance(results[2], Exception) else _empty_competitor()
+
+        if isinstance(results[0], Exception):
+            logger.warning("Problem intensity agent failed: %s — using empty signals", results[0])
+        if isinstance(results[1], Exception):
+            logger.warning("Trend agent failed: %s — using empty signals", results[1])
+        if isinstance(results[2], Exception):
+            logger.warning("Competitor agent failed: %s — using empty signals", results[2])
 
         # ── 6. Normalize ─────────────────────────────────────────────────────
         logger.info("Pipeline step 6: Normalizing signals")
@@ -230,7 +235,7 @@ def evaluate_idea(
     # ── 11. Index evaluation data for RAG chat ─────────────────
     try:
         chunks = chunk_evaluation(str(idea_id), report.model_dump())
-        index_chunks(chunks)
+        await index_chunks_async(chunks)
     except Exception as exc:
         logger.warning("Vector indexing failed (non-blocking): %s", exc)
 

@@ -6,9 +6,12 @@ Returns structured competitor list with names and descriptions.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
-from typing import Any, Dict, List
+import logging
+from typing import List, Dict, Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -73,8 +76,8 @@ def _extract_company_name(title: str, url: str) -> str:
     return "Unknown"
 
 
-def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
-    """Run a single Exa semantic search. Returns result dicts or []."""
+async def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
+    """Run a single Exa semantic search (async) and return result dicts."""
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -88,39 +91,27 @@ def _search_exa(api_key: str, query: str) -> List[Dict[str, Any]]:
             "highlights": True,
         },
     }
-
-    print(f"🔎 [EXA-MR] Searching: {query!r}")
-
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            response = httpx.post(
-                _EXA_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=_REQUEST_TIMEOUT,
+    try:
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            response = await client.post(
+                _EXA_API_URL, headers=headers, json=payload,
             )
-            print(f"📦 [EXA-MR] HTTP {response.status_code} for query={query!r}")
-
-            if response.status_code == 200:
-                results = response.json().get("results", [])
-                print(f"📄 [EXA-MR] Got {len(results)} results")
-                return results
-
-            if response.status_code in (400, 401, 402, 403, 404):
-                print(f"⚠️  [EXA-MR] Quota or access issue — skipping competitor discovery (HTTP {response.status_code})")
-                return []
-
-        except httpx.TimeoutException:
-            print(f"⚠️  [EXA-MR] Timeout (attempt {attempt + 1})")
-        except Exception as exc:
-            print(f"❌ [EXA-MR] Error: {exc}")
+        if response.status_code == 200:
+            results = response.json().get("results", [])
+            print(f"� [MR] Exa: {len(results)} results for {query!r}")
+            return results
+        elif response.status_code in (400, 401, 402, 403, 404):
+            print(f"⚠️  [MR] Exa non-retryable HTTP {response.status_code}")
             return []
-
-        if attempt < _MAX_RETRIES:
-            import time as _time
-            _time.sleep(_INITIAL_BACKOFF * (2 ** attempt))
-
-    return []
+        else:
+            print(f"⚠️  [MR] Exa HTTP {response.status_code} for {query!r}")
+            return []
+    except httpx.TimeoutException:
+        print(f"⚠️  [MR] Exa timeout for {query!r}")
+        return []
+    except Exception as exc:
+        print(f"❌ [MR] Exa error for {query!r}: {exc}")
+        return []
 
 
 def _build_queries(query_bundle: dict) -> list[str]:
@@ -136,8 +127,8 @@ def _build_queries(query_bundle: dict) -> list[str]:
     )
 
 
-def fetch_competitors(query_bundle: dict) -> dict:
-    """Discover competitors via Exa semantic search.
+async def fetch_competitors(query_bundle: dict) -> dict:
+    """Discover competitors via Exa semantic search (async, parallel).
 
     Parameters
     ----------
@@ -151,7 +142,7 @@ def fetch_competitors(query_bundle: dict) -> dict:
         competitors: list[dict] — each has name, description
         competitor_count: int
     """
-    print("🔎 [EXA-MR] Discovering semantic competitors")
+    print("🔎 [EXA-MR] Discovering semantic competitors (parallel)")
 
     try:
         api_key = _get_exa_key()
@@ -161,15 +152,16 @@ def fetch_competitors(query_bundle: dict) -> dict:
 
     queries = _build_queries(query_bundle)
 
+    # Run all Exa queries in parallel
+    tasks = [_search_exa(api_key, q) for q in queries]
+    query_results = await asyncio.gather(*tasks, return_exceptions=True)
+
     raw_results: List[Dict[str, Any]] = []
-    for i, query in enumerate(queries, 1):
-        print(f"\n🔎 [EXA-MR] Executing query {i}/{len(queries)}...")
-        results = _search_exa(api_key, query)
-        raw_results.extend(results)
-        # If first query returns empty due to quota, skip remaining
-        if i == 1 and len(results) == 0:
-            print("⚠️  [EXA-MR] First query returned 0 results — likely quota issue, skipping remaining")
-            break
+    for i, result in enumerate(query_results):
+        if isinstance(result, Exception):
+            print(f"⚠️  [EXA-MR] Query {i+1} failed: {result}")
+            continue
+        raw_results.extend(result)
 
     print(f"📄 [EXA-MR] Total raw results: {len(raw_results)}")
 

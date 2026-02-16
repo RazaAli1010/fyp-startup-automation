@@ -21,6 +21,7 @@ Rules
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import statistics
@@ -175,8 +176,8 @@ def _build_serpapi_queries(idea: Idea) -> Dict[str, List[str]]:
 #  Tavily fetcher                                                         #
 # ===================================================================== #
 
-def _search_tavily(api_key: str, query: str) -> List[Dict[str, Any]]:
-    """Execute a single Tavily search. Returns result dicts or []."""
+async def _search_tavily(api_key: str, query: str) -> List[Dict[str, Any]]:
+    """Execute a single Tavily search (async). Returns result dicts or []."""
     payload = {
         "api_key": api_key,
         "query": query,
@@ -185,7 +186,8 @@ def _search_tavily(api_key: str, query: str) -> List[Dict[str, Any]]:
         "include_answer": False,
     }
     try:
-        response = httpx.post(_TAVILY_API_URL, json=payload, timeout=_TAVILY_TIMEOUT)
+        async with httpx.AsyncClient(timeout=_TAVILY_TIMEOUT) as client:
+            response = await client.post(_TAVILY_API_URL, json=payload)
         if response.status_code == 200:
             data = response.json()
             results = data.get("results", [])
@@ -199,14 +201,18 @@ def _search_tavily(api_key: str, query: str) -> List[Dict[str, Any]]:
         return []
 
 
-def _fetch_tavily_evidence(api_key: str, queries: List[str]) -> List[Dict[str, Any]]:
-    """Fetch all Tavily results across queries, deduplicated by URL."""
+async def _fetch_tavily_evidence(api_key: str, queries: List[str]) -> List[Dict[str, Any]]:
+    """Fetch all Tavily results across queries in parallel, deduplicated by URL."""
+    tasks = [_search_tavily(api_key, q) for q in queries]
+    query_results = await asyncio.gather(*tasks, return_exceptions=True)
+
     all_results: list[dict] = []
     seen_urls: set[str] = set()
 
-    for query in queries:
-        results = _search_tavily(api_key, query)
-        for r in results:
+    for result in query_results:
+        if isinstance(result, Exception):
+            continue
+        for r in result:
             url = r.get("url", "")
             if url and url not in seen_urls:
                 seen_urls.add(url)
@@ -220,8 +226,8 @@ def _fetch_tavily_evidence(api_key: str, queries: List[str]) -> List[Dict[str, A
 #  SerpAPI fetcher — Google search for intent ratios                      #
 # ===================================================================== #
 
-def _serpapi_result_count(api_key: str, query: str) -> int:
-    """Get total_results from a Google search via SerpAPI.
+async def _serpapi_result_count(api_key: str, query: str) -> int:
+    """Get total_results from a Google search via SerpAPI (async).
 
     Returns 0 on any failure.
     """
@@ -232,7 +238,8 @@ def _serpapi_result_count(api_key: str, query: str) -> int:
         "num": 1,  # We only need the result count, not actual results
     }
     try:
-        response = httpx.get(_SERPAPI_BASE_URL, params=params, timeout=_SERPAPI_TIMEOUT)
+        async with httpx.AsyncClient(timeout=_SERPAPI_TIMEOUT) as client:
+            response = await client.get(_SERPAPI_BASE_URL, params=params)
         if response.status_code == 200:
             data = response.json()
             info = data.get("search_information", {})
@@ -247,7 +254,7 @@ def _serpapi_result_count(api_key: str, query: str) -> int:
         return 0
 
 
-def _compute_query_ratios(
+async def _compute_query_ratios(
     api_key: str,
     query_groups: Dict[str, List[str]],
 ) -> tuple[float, float, int]:
@@ -256,20 +263,31 @@ def _compute_query_ratios(
     problem_query_ratio = avg(problem_counts) / (avg(problem_counts) + avg(general_counts))
     alternatives_query_ratio = alternatives_count / total_problem_count
     """
+    problem_queries = query_groups.get("problem", [])
+    general_queries = query_groups.get("general", [])
+
+    # Run all SerpAPI queries in parallel
+    all_queries = problem_queries + general_queries
+    tasks = [_serpapi_result_count(api_key, q) for q in all_queries]
+    all_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Split results back
     problem_counts: list[int] = []
     alternatives_count = 0
     total_problem_queries = 0
 
-    for q in query_groups.get("problem", []):
-        count = _serpapi_result_count(api_key, q)
+    for i, q in enumerate(problem_queries):
+        result = all_results[i]
+        count = result if isinstance(result, int) else 0
         problem_counts.append(count)
         total_problem_queries += 1
         if "alternative" in q.lower():
             alternatives_count = count
 
     general_counts: list[int] = []
-    for q in query_groups.get("general", []):
-        count = _serpapi_result_count(api_key, q)
+    for i, q in enumerate(general_queries):
+        result = all_results[len(problem_queries) + i]
+        count = result if isinstance(result, int) else 0
         general_counts.append(count)
 
     avg_problem = statistics.mean(problem_counts) if problem_counts else 0
@@ -553,7 +571,7 @@ def _determine_confidence(
 #  Public API                                                             #
 # ===================================================================== #
 
-def fetch_problem_intensity_signals(idea: Idea) -> ProblemIntensitySignals:
+async def fetch_problem_intensity_signals(idea: Idea) -> ProblemIntensitySignals:
     """Run the full Problem Intensity pipeline for a given Idea.
 
     Pipeline:
@@ -576,26 +594,39 @@ def fetch_problem_intensity_signals(idea: Idea) -> ProblemIntensitySignals:
     # ── 1. Tavily queries ─────────────────────────────────────────────
     tavily_queries = _build_tavily_queries(idea)
 
-    tavily_results: list[dict] = []
-    try:
-        tavily_key = _get_tavily_key()
-        tavily_results = _fetch_tavily_evidence(tavily_key, tavily_queries)
-    except EnvironmentError:
-        print("⚠️  [PROBLEM] Tavily API key missing — skipping Tavily evidence")
-
-    # ── 2. SerpAPI intent ratios ──────────────────────────────────────
+    # ── 1 & 2. Tavily + SerpAPI in parallel ─────────────────────
     serpapi_queries = _build_serpapi_queries(idea)
-    problem_ratio = 0.0
-    alt_ratio = 0.0
-    total_problem_queries = 0
 
-    try:
-        serpapi_key = _get_serpapi_key()
-        problem_ratio, alt_ratio, total_problem_queries = _compute_query_ratios(
-            serpapi_key, serpapi_queries,
-        )
-    except EnvironmentError:
-        print("⚠️  [PROBLEM] SerpAPI key missing — skipping search intent")
+    # Prepare both tasks
+    async def _tavily_task() -> list[dict]:
+        try:
+            tavily_key = _get_tavily_key()
+            return await _fetch_tavily_evidence(tavily_key, tavily_queries)
+        except EnvironmentError:
+            print(" [PROBLEM] Tavily API key missing — skipping Tavily evidence")
+            return []
+
+    async def _serpapi_task() -> tuple[float, float, int]:
+        try:
+            serpapi_key = _get_serpapi_key()
+            return await _compute_query_ratios(serpapi_key, serpapi_queries)
+        except EnvironmentError:
+            print(" [PROBLEM] SerpAPI key missing — skipping search intent")
+            return (0.0, 0.0, 0)
+
+    tavily_result, serpapi_result = await asyncio.gather(
+        _tavily_task(),
+        _serpapi_task(),
+        return_exceptions=True,
+    )
+
+    tavily_results: list[dict] = tavily_result if isinstance(tavily_result, list) else []
+    if isinstance(serpapi_result, tuple):
+        problem_ratio, alt_ratio, total_problem_queries = serpapi_result
+    else:
+        problem_ratio = 0.0
+        alt_ratio = 0.0
+        total_problem_queries = 0
 
     # ── 3. Extract pain signals from Tavily content ───────────────────
     pain_signals = _extract_pain_signals(tavily_results)

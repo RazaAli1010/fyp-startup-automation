@@ -22,7 +22,7 @@ from typing import Any, Dict, List
 
 import httpx
 
-from .vector_store import embed_single, query_by_idea, get_indexed_agents
+from .vector_store import embed_single, embed_single_async, query_by_idea, get_indexed_agents
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +84,11 @@ def _get_openai_key() -> str:
 # Main chat function
 # ---------------------------------------------------------------------------
 
-def ask_co_founder(
+async def ask_co_founder(
     idea_id: str,
     question: str,
 ) -> Dict[str, Any]:
-    """Process a user question using RAG and return answer + sources.
+    """Process a user question using RAG and return answer + sources (async).
 
     Returns:
         {
@@ -110,9 +110,9 @@ def ask_co_founder(
             "indexed_agents": [],
         }
 
-    # 2. Embed the question
+    # 2. Embed the question (async)
     try:
-        query_embedding = embed_single(question)
+        query_embedding = await embed_single_async(question)
     except Exception as exc:
         logger.error("[CHAT] Failed to embed question: %s", exc)
         return {
@@ -162,7 +162,7 @@ def ask_co_founder(
         {"role": "user", "content": user_message},
     ]
 
-    # 6. Call LLM (no JSON mode, plain text response)
+    # 6. Call LLM (async, no JSON mode, plain text response)
     api_key = _get_openai_key()
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -177,12 +177,12 @@ def ask_co_founder(
 
     try:
         print(f"💬 [CHAT] Calling {_CHAT_MODEL} for idea {idea_id[:8]}...")
-        response = httpx.post(
-            _OPENAI_CHAT_URL,
-            headers=headers,
-            json=payload,
-            timeout=_CHAT_TIMEOUT,
-        )
+        async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
+            response = await client.post(
+                _OPENAI_CHAT_URL,
+                headers=headers,
+                json=payload,
+            )
 
         if response.status_code != 200:
             logger.error("[CHAT] LLM error %d: %s", response.status_code, response.text[:300])
