@@ -1,24 +1,15 @@
 """
-Judge Logic Node (Async Optimized)
+Judge Logic Node (Deterministic)
 
 Aggregates data from all upstream nodes and produces a final verdict
 with transparent scoring, uncertainty propagation, and full schema compliance.
 
-PERFORMANCE OPTIMIZATIONS:
-- Async OpenAI calls with timeout
-- Truncated/summarized upstream data for smaller prompts
-- max_tokens=800 for faster response
-- 12s timeout for LLM calls
+All scoring is deterministic — no LLM calls, no external API calls.
 """
 
-import os
-import json
 import statistics
 import asyncio
 from typing import Dict, List, Any, Optional, Tuple
-from datetime import datetime
-
-from openai import AsyncOpenAI
 
 from ..state import (
     ValidationState, FinalVerdict, QualityMetrics,
@@ -28,12 +19,12 @@ from ..state import (
     Unknown, KillCriterion
 )
 from ..timing import StepTimer, log_timing
-from ..http_client import Timeouts
 from ..epistemic_types import (
     CompetitorType, CONFIDENCE_THRESHOLD, KILL_SWITCH_THRESHOLDS,
     CONFIDENCE_ADJUSTMENTS, REDDIT_SIGNAL_WEIGHTS, TREND_SIGNAL_WEIGHTS,
     get_signal_strength_label
 )
+from ..scoring_engine import ValidationMetrics, calculate_viability_score
 
 
 # Scoring rubric with weights
@@ -491,145 +482,100 @@ def _calculate_trend_momentum_score(
     )
 
 
-def _summarize_upstream_data(
-    reddit_data: Optional[RedditSentiment],
-    trends_data: Optional[TrendsData],
-    competitor_data: Optional[CompetitorAnalysis],
-    has_known_competitors: bool
-) -> str:
-    """
-    Create a COMPACT summary of upstream data for the LLM prompt.
-    This reduces token count significantly.
-    """
-    parts = []
-    
-    # Reddit summary (truncated)
-    if reddit_data and not _is_insufficient_data(reddit_data):
-        sentiment = reddit_data.get("overall_sentiment", "unknown")
-        score = reddit_data.get("sentiment_score", 0)
-        posts = reddit_data.get("total_posts_analyzed", 0)
-        concerns = reddit_data.get("key_concerns", [])[:2]
-        praises = reddit_data.get("key_praises", [])[:2]
-        parts.append(f"Reddit: {sentiment} ({score:.2f}), {posts} posts. Concerns: {concerns[:2]}. Praises: {praises[:2]}")
-    else:
-        parts.append("Reddit: insufficient data")
-    
-    # Trends summary
-    if trends_data and not _is_insufficient_data(trends_data):
-        direction = trends_data.get("trend_direction", "unknown")
-        interest = trends_data.get("interest_score", 0)
-        temporal = trends_data.get("temporal_trend", "unknown")
-        parts.append(f"Trends: {direction}, interest={interest}, temporal={temporal}")
-    else:
-        parts.append("Trends: insufficient data")
-    
-    # Competitor summary using MARKET STRUCTURE (not saturation)
-    if competitor_data and not _is_insufficient_data(competitor_data):
-        market_structure = competitor_data.get("market_structure", {})
-        structure_type = market_structure.get("type", "unknown")
-        structure_evidence = market_structure.get("evidence", [])
-        
-        scoring_competitors = competitor_data.get("scoring_competitors", [])
-        non_scoring = competitor_data.get("non_scoring_competitors", [])
-        
-        # Filter for actual products using the new 'type' field
-        products = [c for c in scoring_competitors if c.get("type") in ["direct_product", "adjacent_product"]]
-        
-        top_products = products[:3]
-        names = [c.get("name", "?") for c in top_products]
-        
-        funding = competitor_data.get("total_funding_in_space", "Unknown")
-        evidence_str = structure_evidence[0] if structure_evidence else "No evidence"
-        parts.append(f"Market Structure: {structure_type}. Evidence: {evidence_str}. Scoring competitors: {len(products)} ({names}). Non-scoring (blogs/lists): {len(non_scoring)}.")
-    else:
-        parts.append("Competition: insufficient data")
-    
-    parts.append(f"Known major players: {'Yes' if has_known_competitors else 'No'}")
-    
-    return "\n".join(parts)
-
-
-async def _assess_with_llm(
-    client: AsyncOpenAI,
-    idea: str,
-    upstream_summary: str,
+def _deterministic_assessment(
+    dimension_scores: Dict[str, float],
     insufficient_nodes: List[str],
-    timeout: float = Timeouts.OPENAI
+    market_structure_type: str,
+    has_known_competitors: bool
 ) -> Dict[str, Any]:
-    """Use LLM for feasibility, economics, and insights with timeout."""
-    
-    data_quality_note = ""
+    """Deterministic feasibility and economics assessment. No LLM calls."""
+    md = dimension_scores.get("market_demand", 50)
+    comp = dimension_scores.get("competition", 50)
+    trend = dimension_scores.get("trend_momentum", 50)
+    sent = dimension_scores.get("sentiment", 50)
+
+    metrics = ValidationMetrics(
+        demand_score=md,
+        market_size_score=trend,
+        differentiation_score=comp,
+        timing_score=trend,
+        execution_risk_score=max(0, 100 - comp),
+        failure_risk_score=max(0, 100 - md),
+        economic_viability_score=(md + comp) / 2.0,
+        investor_fit_score=(trend + sent) / 2.0,
+    )
+    viability = calculate_viability_score(metrics)
+
+    feasibility_score: float = viability["viability_score"]
+    economics_score: float = viability["risk_adjusted_score"]
+
+    strengths: List[str] = []
+    weaknesses: List[str] = []
+    risk_factors: List[str] = []
+
+    if md >= 65:
+        strengths.append("Strong market demand signals detected")
+    elif md < 40:
+        weaknesses.append("Weak market demand signals")
+        risk_factors.append("Low market demand")
+
+    if comp >= 65:
+        strengths.append("Favorable competitive landscape")
+    elif comp < 40:
+        weaknesses.append("High competitive pressure")
+        risk_factors.append("Intense competition")
+
+    if trend >= 65:
+        strengths.append("Positive trend momentum")
+    elif trend < 40:
+        weaknesses.append("Declining or weak trend momentum")
+        risk_factors.append("Weak market momentum")
+
+    if sent >= 65:
+        strengths.append("Positive community sentiment")
+    elif sent < 40:
+        weaknesses.append("Negative or neutral sentiment")
+
+    if market_structure_type in ["fragmented", "emerging"]:
+        strengths.append(f"Market structure ({market_structure_type}) suggests opportunity")
+    elif market_structure_type in ["consolidated", "monopolized"]:
+        risk_factors.append(f"Market structure ({market_structure_type}) presents barriers")
+
+    if has_known_competitors:
+        risk_factors.append("Known major players in market")
+
     if insufficient_nodes:
-        data_quality_note = f"\nNOTE: Insufficient data from: {', '.join(insufficient_nodes)}. Be cautious."
-    
-    # COMPACT prompt - much smaller than before
-    # COMPACT prompt - much smaller than before
-    prompt = f"""Analyze this startup idea briefly.
-    
-    SKEPTICISM REQUIRED:
-    - Verify if "competitors" are actual PRODUCTS or just BLOGS/LISTS.
-    - Do not treat a "list of ideas" as a competitor.
-    - If market is "saturated" with blogs but has few products, call it "fragmented" or "noisy", not "impossible".
-    - Be critically honest about feasibility.
+        weaknesses.append(f"Insufficient data from: {', '.join(insufficient_nodes)}")
+        risk_factors.append("Incomplete data coverage")
 
-IDEA: {idea}
+    if not strengths:
+        strengths.append("Idea submitted for validation")
+    if not weaknesses:
+        weaknesses.append("No critical weaknesses identified")
+    if not risk_factors:
+        risk_factors.append("Standard market entry risks")
 
-DATA:
-{upstream_summary}
-{data_quality_note}
+    summary_parts: List[str] = []
+    if feasibility_score >= 65:
+        summary_parts.append("Viability score indicates promising potential.")
+    elif feasibility_score >= 40:
+        summary_parts.append("Mixed viability signals require further validation.")
+    else:
+        summary_parts.append("Low viability score suggests significant challenges.")
 
-Return JSON only:
-{{
-    "feasibility_score": <0-100>,
-    "economics_score": <0-100>,
-    "summary": "<2 sentences max, focus on product viability>",
-    "strengths": ["<1>", "<2>", "<3>"],
-    "weaknesses": ["<1>", "<2>"],
-    "action_items": ["<1>", "<2>", "<3>"],
-    "risk_factors": ["<1>", "<2>"]
-}}"""
+    if len(insufficient_nodes) >= 2:
+        summary_parts.append("Analysis limited by insufficient upstream data.")
+    elif len(insufficient_nodes) == 1:
+        summary_parts.append(f"Partial data gap in {insufficient_nodes[0]} analysis.")
 
-    try:
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model="gpt-4o-pro",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=2000  
-            ),
-            timeout=timeout
-        )
-        
-        content = response.choices[0].message.content.strip()
-        
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
-        
-        return json.loads(content)
-        
-    except asyncio.TimeoutError:
-        log_timing("judge", f"OpenAI timeout after {timeout}s")
-        return _default_llm_response()
-    except json.JSONDecodeError:
-        log_timing("judge", "Failed to parse LLM response as JSON")
-        return _default_llm_response()
-    except Exception as e:
-        log_timing("judge", f"LLM error: {str(e)[:50]}")
-        return _default_llm_response()
-
-
-def _default_llm_response() -> Dict[str, Any]:
-    """Default response when LLM fails."""
     return {
-        "feasibility_score": 50,
-        "economics_score": 50,
-        "summary": "Analysis partially complete due to data limitations.",
-        "strengths": ["Unable to fully assess"],
-        "weaknesses": ["Incomplete analysis"],
-        "action_items": ["Conduct further market research"],
-        "risk_factors": ["Insufficient data for complete assessment"]
+        "feasibility_score": round(feasibility_score, 1),
+        "economics_score": round(economics_score, 1),
+        "summary": " ".join(summary_parts),
+        "strengths": strengths[:3],
+        "weaknesses": weaknesses[:3],
+        "risk_factors": risk_factors[:3],
+        "viability_breakdown": viability["score_breakdown"],
     }
 
 
@@ -665,7 +611,6 @@ def _extract_unknowns(
     trends_data: Optional[TrendsData],
     competitor_data: Optional[CompetitorAnalysis],
     dimension_scores: Dict[str, float],
-    llm_assessment: Dict[str, Any],
     insufficient_nodes: List[str]
 ) -> List[Unknown]:
     """
@@ -836,17 +781,6 @@ def _extract_unknowns(
                 "source": f"dimension_{dim}",
                 "evidence_gap": dimension_unknowns[dim]["evidence_gap"]
             })
-    
-    # === LLM-IDENTIFIED RISKS AS UNKNOWNS ===
-    risk_factors = llm_assessment.get("risk_factors", [])
-    for i, risk in enumerate(risk_factors[:2]):
-        unknowns.append({
-            "claim": f"Risk '{risk[:50]}...' can be mitigated" if len(risk) > 50 else f"Risk '{risk}' can be mitigated",
-            "confidence": 0.40,
-            "reason": f"LLM identified this as a risk factor. Mitigation strategy unvalidated.",
-            "source": "llm_assessment",
-            "evidence_gap": "Specific mitigation plan with measurable success criteria"
-        })
     
     # === CORE BUSINESS ASSUMPTIONS (ALWAYS UNCERTAIN) ===
     # These are ALWAYS unknown unless explicitly proven
@@ -1313,36 +1247,22 @@ def _determine_recommendation(
 async def judge_logic(state: ValidationState) -> Dict[str, Any]:
     """
     Aggregate upstream data and produce final verdict.
-    
-    ASYNC OPTIMIZED:
-    - Async OpenAI call with 12s timeout
-    - Compact prompt with summarized upstream data
-    - max_tokens=800 for faster response
+
+    Fully deterministic — no LLM calls, no external API calls.
     """
     timer = StepTimer("judge")
-    
+
     idea_input = state.get("idea_input", "")
     processing_errors = list(state.get("processing_errors", []))
-    
+
     reddit_data = state.get("reddit_sentiment")
     trends_data = state.get("trends_data")
     competitor_data = state.get("competitor_analysis")
-    
+
     if not idea_input:
         return {
             "final_verdict": _insufficient_verdict(["no_idea_provided"]),
             "processing_errors": processing_errors + ["Judge: No idea provided"]
-        }
-    
-    try:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not set")
-        openai_client = AsyncOpenAI(api_key=api_key)
-    except ValueError as e:
-        return {
-            "final_verdict": _insufficient_verdict([str(e)]),
-            "processing_errors": processing_errors + [f"Judge: {str(e)}"]
         }
     
     # Identify insufficient data nodes
@@ -1411,31 +1331,34 @@ async def judge_logic(state: ValidationState) -> Dict[str, Any]:
             "score": trend_score, "weight": 0.15, "confidence": trend_conf, "rationale": trend_rationale
         }
     
-    # LLM assessment with compact prompt
-    async with timer.async_step("llm_assessment"):
-        upstream_summary = _summarize_upstream_data(
-            reddit_data, trends_data, competitor_data, has_known_competitors
+    # Deterministic assessment (replaces LLM)
+    async with timer.async_step("deterministic_assessment"):
+        deterministic_result = _deterministic_assessment(
+            dimension_scores=dimension_scores,
+            insufficient_nodes=insufficient_nodes,
+            market_structure_type=(
+                competitor_data.get("market_structure", {}).get("type", "unknown")
+                if competitor_data else "unknown"
+            ),
+            has_known_competitors=has_known_competitors,
         )
-        llm_assessment = await _assess_with_llm(
-            openai_client, idea_input, upstream_summary, insufficient_nodes
-        )
-    
+
     # Feasibility
-    feas_score = llm_assessment.get("feasibility_score", 50)
+    feas_score = deterministic_result.get("feasibility_score", 50)
     feas_conf = 0.6 if not insufficient_nodes else 0.4
     dimension_scores["feasibility"] = feas_score
     dimension_confidences["feasibility"] = feas_conf
     score_breakdown["feasibility"] = {
-        "score": feas_score, "weight": 0.15, "confidence": feas_conf, "rationale": "LLM assessment"
+        "score": feas_score, "weight": 0.15, "confidence": feas_conf, "rationale": "Deterministic scoring engine"
     }
-    
+
     # Economics
-    econ_score = llm_assessment.get("economics_score", 50)
+    econ_score = deterministic_result.get("economics_score", 50)
     econ_conf = 0.6 if not insufficient_nodes else 0.4
     dimension_scores["economics"] = econ_score
     dimension_confidences["economics"] = econ_conf
     score_breakdown["economics"] = {
-        "score": econ_score, "weight": 0.15, "confidence": econ_conf, "rationale": "LLM assessment"
+        "score": econ_score, "weight": 0.15, "confidence": econ_conf, "rationale": "Deterministic scoring engine"
     }
     
     # Calculate weighted overall score
@@ -1565,9 +1488,9 @@ async def judge_logic(state: ValidationState) -> Dict[str, Any]:
     
     # Build falsification_test (adversarial analysis)
     falsification_test: FalsificationTest = {
-        "killer_feature_missing": llm_assessment.get("weaknesses", ["Unknown"])[0] if llm_assessment.get("weaknesses") else "Unknown",
-        "why_this_might_fail": llm_assessment.get("risk_factors", ["Unknown"])[0] if llm_assessment.get("risk_factors") else "Unknown", 
-        "adversarial_concerns": llm_assessment.get("risk_factors", []),
+        "killer_feature_missing": deterministic_result.get("weaknesses", ["Unknown"])[0] if deterministic_result.get("weaknesses") else "Unknown",
+        "why_this_might_fail": deterministic_result.get("risk_factors", ["Unknown"])[0] if deterministic_result.get("risk_factors") else "Unknown",
+        "adversarial_concerns": deterministic_result.get("risk_factors", []),
         "market_timing_risk": "crowded" if kill_switch_triggered else ("late" if direct_count >= 3 else "viable")
     }
     
@@ -1580,19 +1503,18 @@ async def judge_logic(state: ValidationState) -> Dict[str, Any]:
         has_known_competitors=has_known_competitors,
         kill_switch_triggered=kill_switch_triggered,
         kill_switch_reason=kill_switch_reason,
-        risk_factors=llm_assessment.get("risk_factors", []),
-        weaknesses=llm_assessment.get("weaknesses", []),
+        risk_factors=deterministic_result.get("risk_factors", []),
+        weaknesses=deterministic_result.get("weaknesses", []),
         market_structure_type=market_structure_type,
         insufficient_nodes=insufficient_nodes
     )
-    
+
     # === EXTRACT UNKNOWNS (MANDATORY) ===
     unknowns = _extract_unknowns(
         reddit_data=reddit_data,
         trends_data=trends_data,
         competitor_data=competitor_data,
         dimension_scores=dimension_scores,
-        llm_assessment=llm_assessment,
         insufficient_nodes=insufficient_nodes
     )
     
@@ -1629,10 +1551,10 @@ async def judge_logic(state: ValidationState) -> Dict[str, Any]:
         "overall_score": overall_score,
         "recommendation": recommendation,  # ConditionalRecommendation dict
         "confidence": round(overall_confidence, 2),
-        "summary": llm_assessment.get("summary", "Analysis complete."),
-        "strengths": llm_assessment.get("strengths", []),
-        "weaknesses": llm_assessment.get("weaknesses", []),
-        "risk_factors": llm_assessment.get("risk_factors", []),
+        "summary": deterministic_result.get("summary", "Analysis complete."),
+        "strengths": deterministic_result.get("strengths", []),
+        "weaknesses": deterministic_result.get("weaknesses", []),
+        "risk_factors": deterministic_result.get("risk_factors", []),
         
         # MANDATORY: Epistemic uncertainty layer
         "unknowns": unknowns,  # Never empty - surfaces all uncertain claims

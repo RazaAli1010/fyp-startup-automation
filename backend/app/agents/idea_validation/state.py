@@ -320,10 +320,6 @@ class ValidationState(TypedDict, total=False):
     # Input field - matches router expectation
     idea_input: str
     
-    # Semantic Guardrails
-    idea_embedding: List[float]  # Global embedding of the idea
-    intent_keywords: List[str]   # Core nouns/verbs extracted from idea
-    
     # Node outputs - match router expectations
     reddit_sentiment: Optional[RedditSentiment]
     trends_data: Optional[TrendsData]

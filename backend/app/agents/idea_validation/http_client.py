@@ -16,8 +16,6 @@ class Timeouts:
     TAVILY = 8.0        # Reddit/Tavily API
     SERPAPI = 8.0       # Google Trends via SerpAPI
     EXA = 10.0          # Exa.ai search
-    OPENAI = 12.0       # OpenAI API calls
-    OPENAI_EMBEDDING = 15.0  # OpenAI embeddings (batch)
     
     # Global node timeout - if a node takes longer, bail out
     NODE_MAX = 25.0
@@ -77,8 +75,6 @@ def get_timeout(service: str) -> httpx.Timeout:
         "tavily": Timeouts.TAVILY,
         "serpapi": Timeouts.SERPAPI,
         "exa": Timeouts.EXA,
-        "openai": Timeouts.OPENAI,
-        "openai_embedding": Timeouts.OPENAI_EMBEDDING,
     }
     seconds = timeouts.get(service.lower(), 10.0)
     return httpx.Timeout(seconds, connect=5.0)

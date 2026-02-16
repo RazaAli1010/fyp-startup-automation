@@ -22,6 +22,7 @@ venv/
 .venv/
 env/
 .env/
+backend/.env
 ENV/
 startup-venv/
 backend/venv/
@@ -48,8 +49,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -351,8 +352,8 @@ service-account.json
 *.onnx
 *.pt
 *.pth
-models/
-!models/.gitkeep
+/models/
+!/models/.gitkeep
 
 # Archives
 *.zip
