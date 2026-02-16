@@ -3,7 +3,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./startbot.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/startbot.db")
 
 engine = create_engine(
     DATABASE_URL,

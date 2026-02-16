@@ -323,8 +323,9 @@ pids/
 # Optional: Ignore local configuration overrides
 *.local
 
-# Docker (if used later)
+# Docker
 docker-compose.override.yml
+backend/data/
 
 # Terraform (if used later)
 *.tfstate

@@ -33,9 +33,13 @@ def _get_sqlite_path() -> str | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Dev-mode DB reset ────────────────────────────────────────
+    # Ensure data directory exists for SQLite
+    db_path = _get_sqlite_path()
+    if db_path:
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+
     if os.getenv("ENV", "development") == "development":
         print("⚠️  Running in DEVELOPMENT mode — DB reset enabled")
-        db_path = _get_sqlite_path()
         if db_path and os.path.exists(db_path):
             os.remove(db_path)
             print("🧹 [DB] Development DB reset")
@@ -60,20 +64,21 @@ app = FastAPI(
 )
 
 
+_cors_origins = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000"
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-print("🌐 [CORS] Enabled for frontend origins: localhost:3000")
+print(f"🌐 [CORS] Enabled for origins: {_cors_origins}")
 
 
 
