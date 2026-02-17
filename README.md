@@ -1,7 +1,6 @@
-# StartBot -- AI-Powered Startup Execution Platform
+# StartBot -- A Multi-Agent AI System for Startup Workflow Automation
 
 StartBot is a production-grade, multi-agent AI system that transforms a raw startup idea into a complete execution plan. The platform orchestrates six specialized agents -- Idea Validation, Market Research, Pitch Deck Generation, MVP Planning, Legal Document Drafting, and an AI Chat Co-Founder -- backed by deterministic scoring formulas, structured LLM responses, real-time web research, and retrieval-augmented generation (RAG). The system is fully Dockerized, uses SQLite for lightweight persistence, GPT-4.1 for all language model operations, and supports asynchronous parallel API execution across its agent pipeline.
-
 
 ---
 
@@ -20,7 +19,6 @@ StartBot is a production-grade, multi-agent AI system that transforms a raw star
 11. [Academic Value](#academic-value)
 12. [Future Improvements](#future-improvements)
 13. [License](#license)
-
 
 ---
 
@@ -50,7 +48,6 @@ GPT-4.1 powered, jurisdiction-aware document generation. Supports four document 
 
 A retrieval-augmented generation agent backed by ChromaDB. Every agent output (evaluation scores, market research, MVP blueprints, pitch deck summaries, legal documents) is chunked into semantic sections, embedded using OpenAI `text-embedding-3-large`, and indexed in a persistent ChromaDB collection (`startbot_agent_outputs`). User questions are embedded, matched against the idea's indexed data via cosine similarity (top-k=5), and answered by GPT-4.1 with strict context-only guardrails. The agent cites source labels and reports which agents have indexed data.
 
-
 ---
 
 ## System Architecture
@@ -75,7 +72,7 @@ A retrieval-augmented generation agent backed by ChromaDB. Every agent output (e
 |  | pitch-deck|   | problem_agent  |   |   competitors,      |  |
 |  | mvp       |   | competitor_    |   |   reasoning,        |  |
 |  | legal     |   |  agent/cleaner |   |   research          |  |
-|  | chat      |   | reddit_agent   |   | pitch_deck_agent/   |  |
+|  | chat      |   |                |   | pitch_deck_agent/   |  |
 |  +-----------+   | alai_client    |   | mvp_agent/          |  |
 |                  | chat_service   |   | legal_agent/        |  |
 |                  | vector_store   |   +---------------------+  |
@@ -96,32 +93,29 @@ External APIs:
   Tavily Search API       -- Article and report search
   SerpAPI (Google Trends) -- Trend demand signals
   Exa Search API          -- Semantic competitor discovery
-  Reddit API (PRAW)       -- Pain-point mining
   Alai Slides API         -- Pitch deck generation
 ```
-
 
 ---
 
 ## Tech Stack
 
-| Layer               | Technology                                        |
-|---------------------|---------------------------------------------------|
-| Frontend            | Next.js 16, React 19, Tailwind CSS 4, TypeScript  |
-| Backend             | FastAPI 0.115, Python 3.10, Uvicorn (ASGI)        |
-| Database            | SQLite (file-based persistence)                   |
-| ORM                 | SQLAlchemy 2.0                                    |
-| AI Model            | OpenAI GPT-4.1                                    |
-| Embeddings          | OpenAI text-embedding-3-large                     |
-| Vector Database     | ChromaDB (persistent mode)                        |
-| Agent Orchestration | LangGraph (StateGraph with parallel edges)         |
-| Search APIs         | Tavily, SerpAPI, Exa                              |
-| Social API          | Reddit (PRAW)                                     |
-| Slides API          | Alai Slides API                                   |
-| Authentication      | JWT (python-jose) + Google OAuth 2.0              |
-| Containerization    | Docker, Docker Compose                            |
-| Data Validation     | Pydantic 2.10                                     |
-
+| Layer               | Technology                                       |
+| ------------------- | ------------------------------------------------ |
+| Frontend            | Next.js 16, React 19, Tailwind CSS 4, TypeScript |
+| Backend             | FastAPI 0.115, Python 3.10, Uvicorn (ASGI)       |
+| Database            | SQLite (file-based persistence)                  |
+| ORM                 | SQLAlchemy 2.0                                   |
+| AI Model            | OpenAI GPT-4.1                                   |
+| Embeddings          | OpenAI text-embedding-3-large                    |
+| Vector Database     | ChromaDB (persistent mode)                       |
+| Agent Orchestration | LangGraph (StateGraph with parallel edges)       |
+| Search APIs         | Tavily, SerpAPI, Exa                             |
+| Social API          | Reddit (PRAW)                                    |
+| Slides API          | Alai Slides API                                  |
+| Authentication      | JWT (python-jose) + Google OAuth 2.0             |
+| Containerization    | Docker, Docker Compose                           |
+| Data Validation     | Pydantic 2.10                                    |
 
 ---
 
@@ -131,14 +125,14 @@ StartBot uses SQLite with SQLAlchemy ORM. All primary keys are UUID v4, stored a
 
 ### Tables
 
-| Table              | Description                                                        |
-|--------------------|--------------------------------------------------------------------|
-| `users`            | User accounts with email, username, hashed password, auth provider (local or Google), and email verification status. |
-| `ideas`            | Startup ideas with structured input fields (name, description, industry, customer type, geography) plus OpenAI-inferred attributes (revenue model, technical complexity, regulatory risk, problem/market keywords) and persisted evaluation scores. |
-| `market_research`  | Market research reports with TAM/SAM/SOM ranges, ARPU, growth rate, demand strength, competitor data, assumptions, confidence scores, and source references. One-to-one with ideas. |
-| `pitch_decks`      | Pitch deck metadata including Alai generation ID, shareable view URL, PDF export URL, provider, and status. Deck content stored as JSON text. One-to-one with ideas. |
-| `mvp_reports`      | MVP blueprint reports stored as JSON text. Contains MVP type, core features, tech stack, build plan, validation plan, and risk notes. One-to-one with ideas. |
-| `legal_documents`  | Legal documents with type (NDA, founder agreement, privacy policy, terms of service), jurisdiction, and generated content as JSON text. Many-to-one with ideas. |
+| Table             | Description                                                                                                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`           | User accounts with email, username, hashed password, auth provider (local or Google), and email verification status.                                                                                                                                |
+| `ideas`           | Startup ideas with structured input fields (name, description, industry, customer type, geography) plus OpenAI-inferred attributes (revenue model, technical complexity, regulatory risk, problem/market keywords) and persisted evaluation scores. |
+| `market_research` | Market research reports with TAM/SAM/SOM ranges, ARPU, growth rate, demand strength, competitor data, assumptions, confidence scores, and source references. One-to-one with ideas.                                                                 |
+| `pitch_decks`     | Pitch deck metadata including Alai generation ID, shareable view URL, PDF export URL, provider, and status. Deck content stored as JSON text. One-to-one with ideas.                                                                                |
+| `mvp_reports`     | MVP blueprint reports stored as JSON text. Contains MVP type, core features, tech stack, build plan, validation plan, and risk notes. One-to-one with ideas.                                                                                        |
+| `legal_documents` | Legal documents with type (NDA, founder agreement, privacy policy, terms of service), jurisdiction, and generated content as JSON text. Many-to-one with ideas.                                                                                     |
 
 ### Relationships
 
@@ -152,7 +146,6 @@ StartBot uses SQLite with SQLAlchemy ORM. All primary keys are UUID v4, stored a
 ### Vector Store (ChromaDB)
 
 Agent outputs are chunked into semantic sections, embedded via `text-embedding-3-large`, and stored in a persistent ChromaDB collection (`startbot_agent_outputs`). Chunks carry metadata including `idea_id`, `agent` name, and `section` label. This index powers the AI Chat Co-Founder RAG pipeline. The vector store is persisted at `vector_store/` via a Docker volume.
-
 
 ---
 
@@ -208,7 +201,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_APP_NAME=StartBot
 ```
 
-
 ---
 
 ## Local Development Setup
@@ -238,7 +230,6 @@ npm run dev
 
 The frontend starts at `http://localhost:3000`.
 
-
 ---
 
 ## Dockerized Deployment
@@ -262,10 +253,10 @@ The `docker-compose.yml` defines two services:
 
 ### Persistence
 
-| Volume         | Mount Point         | Purpose                               |
-|----------------|---------------------|---------------------------------------|
-| `backend-data` | `/app/data`         | SQLite database file (`startbot.db`)  |
-| `vector-store` | `/app/vector_store` | ChromaDB persistent embeddings        |
+| Volume         | Mount Point         | Purpose                              |
+| -------------- | ------------------- | ------------------------------------ |
+| `backend-data` | `/app/data`         | SQLite database file (`startbot.db`) |
+| `vector-store` | `/app/vector_store` | ChromaDB persistent embeddings       |
 
 Data in both volumes survives container restarts and rebuilds. To reset all data:
 
@@ -278,7 +269,6 @@ docker compose up --build
 
 Both services communicate over a shared Docker bridge network (`startbot-network`). The frontend calls the backend via the host-mapped port.
 
-
 ---
 
 ## Production Deployment Notes
@@ -289,84 +279,82 @@ Both services communicate over a shared Docker bridge network (`startbot-network
 - **ChromaDB** persistence directory should be backed by a persistent volume in cloud deployments.
 - **API keys** must never be committed to version control. Use platform-level environment variable injection.
 
-
 ---
 
 ## API Reference
 
 ### Authentication
 
-| Method | Endpoint                      | Description                              |
-|--------|-------------------------------|------------------------------------------|
-| `POST` | `/auth/signup`                | Create a new local account               |
-| `POST` | `/auth/login`                 | Authenticate and receive a JWT           |
-| `GET`  | `/auth/verify-email`          | Verify email via token (query parameter) |
-| `GET`  | `/auth/me`                    | Get current authenticated user           |
-| `GET`  | `/auth/dashboard`             | Aggregated dashboard with all user data  |
-| `GET`  | `/auth/google/status`         | Check if Google OAuth is enabled         |
-| `GET`  | `/auth/google/login`          | Initiate Google OAuth flow               |
-| `GET`  | `/auth/google/callback`       | Google OAuth callback handler            |
+| Method | Endpoint                | Description                              |
+| ------ | ----------------------- | ---------------------------------------- |
+| `POST` | `/auth/signup`          | Create a new local account               |
+| `POST` | `/auth/login`           | Authenticate and receive a JWT           |
+| `GET`  | `/auth/verify-email`    | Verify email via token (query parameter) |
+| `GET`  | `/auth/me`              | Get current authenticated user           |
+| `GET`  | `/auth/dashboard`       | Aggregated dashboard with all user data  |
+| `GET`  | `/auth/google/status`   | Check if Google OAuth is enabled         |
+| `GET`  | `/auth/google/login`    | Initiate Google OAuth flow               |
+| `GET`  | `/auth/google/callback` | Google OAuth callback handler            |
 
 ### Ideas
 
-| Method | Endpoint                          | Description                             |
-|--------|-----------------------------------|-----------------------------------------|
-| `POST` | `/ideas/`                         | Submit a structured startup idea        |
+| Method | Endpoint  | Description                      |
+| ------ | --------- | -------------------------------- |
+| `POST` | `/ideas/` | Submit a structured startup idea |
 
 ### Idea Evaluation
 
-| Method | Endpoint                          | Description                             |
-|--------|-----------------------------------|-----------------------------------------|
-| `POST` | `/ideas/{idea_id}/evaluate`       | Run the full evaluation pipeline        |
-| `GET`  | `/ideas/{idea_id}/evaluation`     | Retrieve stored evaluation report       |
+| Method | Endpoint                      | Description                       |
+| ------ | ----------------------------- | --------------------------------- |
+| `POST` | `/ideas/{idea_id}/evaluate`   | Run the full evaluation pipeline  |
+| `GET`  | `/ideas/{idea_id}/evaluation` | Retrieve stored evaluation report |
 
 ### Market Research
 
-| Method | Endpoint                              | Description                         |
-|--------|---------------------------------------|-------------------------------------|
-| `POST` | `/market-research/generate`           | Generate market research for an idea|
-| `GET`  | `/market-research/idea/{idea_id}`     | Get research report by idea         |
-| `GET`  | `/market-research/`                   | List all research for current user  |
+| Method | Endpoint                          | Description                          |
+| ------ | --------------------------------- | ------------------------------------ |
+| `POST` | `/market-research/generate`       | Generate market research for an idea |
+| `GET`  | `/market-research/idea/{idea_id}` | Get research report by idea          |
+| `GET`  | `/market-research/`               | List all research for current user   |
 
 ### Pitch Deck
 
-| Method | Endpoint                          | Description                             |
-|--------|-----------------------------------|-----------------------------------------|
-| `POST` | `/pitch-deck/generate`            | Generate an investor pitch deck         |
-| `GET`  | `/pitch-deck/idea/{idea_id}`      | Get pitch deck by idea                  |
-| `GET`  | `/pitch-deck/{pitch_deck_id}`     | Get a specific pitch deck               |
-| `GET`  | `/pitch-deck/`                    | List all pitch decks for current user   |
+| Method | Endpoint                      | Description                           |
+| ------ | ----------------------------- | ------------------------------------- |
+| `POST` | `/pitch-deck/generate`        | Generate an investor pitch deck       |
+| `GET`  | `/pitch-deck/idea/{idea_id}`  | Get pitch deck by idea                |
+| `GET`  | `/pitch-deck/{pitch_deck_id}` | Get a specific pitch deck             |
+| `GET`  | `/pitch-deck/`                | List all pitch decks for current user |
 
 ### MVP Blueprint
 
-| Method | Endpoint                      | Description                             |
-|--------|-------------------------------|-----------------------------------------|
-| `POST` | `/mvp/generate`               | Generate MVP blueprint for an idea      |
-| `GET`  | `/mvp/idea/{idea_id}`         | Get MVP report by idea                  |
-| `GET`  | `/mvp/`                       | List all MVP reports for current user   |
+| Method | Endpoint              | Description                           |
+| ------ | --------------------- | ------------------------------------- |
+| `POST` | `/mvp/generate`       | Generate MVP blueprint for an idea    |
+| `GET`  | `/mvp/idea/{idea_id}` | Get MVP report by idea                |
+| `GET`  | `/mvp/`               | List all MVP reports for current user |
 
 ### Legal Documents
 
-| Method | Endpoint                      | Description                             |
-|--------|-------------------------------|-----------------------------------------|
-| `POST` | `/legal/generate`             | Generate a legal document               |
-| `GET`  | `/legal/idea/{idea_id}`       | List all legal documents by idea        |
-| `GET`  | `/legal/{document_id}`        | Get a specific legal document           |
+| Method | Endpoint                | Description                      |
+| ------ | ----------------------- | -------------------------------- |
+| `POST` | `/legal/generate`       | Generate a legal document        |
+| `GET`  | `/legal/idea/{idea_id}` | List all legal documents by idea |
+| `GET`  | `/legal/{document_id}`  | Get a specific legal document    |
 
 ### AI Chat Co-Founder
 
-| Method | Endpoint                      | Description                             |
-|--------|-------------------------------|-----------------------------------------|
-| `POST` | `/chat/{idea_id}/ask`         | Ask the AI Co-Founder a question        |
-| `GET`  | `/chat/{idea_id}/status`      | Check which agents have indexed data    |
+| Method | Endpoint                 | Description                          |
+| ------ | ------------------------ | ------------------------------------ |
+| `POST` | `/chat/{idea_id}/ask`    | Ask the AI Co-Founder a question     |
+| `GET`  | `/chat/{idea_id}/status` | Check which agents have indexed data |
 
 ### System
 
-| Method | Endpoint       | Description              |
-|--------|----------------|--------------------------|
-| `GET`  | `/`            | API root with metadata   |
-| `GET`  | `/health`      | Service health check     |
-
+| Method | Endpoint  | Description            |
+| ------ | --------- | ---------------------- |
+| `GET`  | `/`       | API root with metadata |
+| `GET`  | `/health` | Service health check   |
 
 ---
 
@@ -396,7 +384,6 @@ The evaluation pipeline dispatches all three data-gathering agents (problem inte
 
 Every agent and route is wrapped in structured error handling. External API failures produce empty-but-valid signal objects rather than crashes. A global exception handler in FastAPI returns sanitized error responses. The frontend uses a React Error Boundary and normalized API error classes.
 
-
 ---
 
 ## Academic Value
@@ -425,7 +412,6 @@ The codebase demonstrates separation of concerns (routes, services, agents, mode
 
 While currently deployed with SQLite for simplicity, the architecture cleanly separates the database layer via SQLAlchemy ORM, the vector store via a service abstraction, and the LLM client via a centralized module. Each layer can be independently swapped or scaled without modifying agent logic.
 
-
 ---
 
 ## Future Improvements
@@ -439,7 +425,6 @@ While currently deployed with SQLite for simplicity, the architecture cleanly se
 - Rate limiting and usage quotas per user
 - Webhook notifications for completed agent runs
 - Export functionality for reports (PDF, DOCX)
-
 
 ---
 
