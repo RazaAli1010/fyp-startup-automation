@@ -15,7 +15,7 @@ class MVPReport(Base):
     user_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
     idea_id = Column(GUID(), ForeignKey("ideas.id"), nullable=False, unique=True)
     status = Column(String(32), nullable=False, default="pending")  # pending | generated | failed
-    blueprint_json = Column(Text, nullable=True)  # JSON string (compatible with SQLite & PG)
+    blueprint_json = Column(Text, nullable=True)  # JSON string
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

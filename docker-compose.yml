@@ -9,6 +9,28 @@
 # =============================================================================
 
 services:
+  # ── PostgreSQL Database ──────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: startbot-db
+    environment:
+      POSTGRES_USER: startbot
+      POSTGRES_PASSWORD: startbot
+      POSTGRES_DB: startbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - startbot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U startbot -d startbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
   # ── Backend (FastAPI) ─────────────────────────────────────────────────
   backend:
     build:
@@ -20,16 +42,18 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=sqlite:///./data/startbot.db
+      - DATABASE_URL=postgresql://startbot:startbot@db:5432/startbot
       - HOST=0.0.0.0
       - PORT=8000
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - CHROMADB_PERSIST_DIR=/app/vector_store
     volumes:
-      - backend-data:/app/data
       - vector-store:/app/vector_store
     networks:
       - startbot-network
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -41,7 +65,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     restart: unless-stopped
 
   # ── Frontend (Next.js) ────────────────────────────────────────────────
@@ -64,7 +88,7 @@ services:
 
 # ── Volumes ───────────────────────────────────────────────────────────────
 volumes:
-  backend-data:
+  postgres-data:
     driver: local
   vector-store:
     driver: local

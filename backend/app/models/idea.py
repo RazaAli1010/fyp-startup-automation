@@ -12,8 +12,7 @@ from ..database import Base
 class GUID(TypeDecorator):
     """Platform-independent UUID type.
 
-    Uses CHAR(36) to store UUIDs as strings, compatible with all backends
-    including SQLite.
+    Uses CHAR(36) to store UUIDs as strings, compatible with all backends.
     """
 
     impl = CHAR

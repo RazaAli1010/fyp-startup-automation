@@ -1,6 +1,6 @@
 # StartBot -- A Multi-Agent AI System for Startup Workflow Automation
 
-StartBot is a production-grade, multi-agent AI system that transforms a raw startup idea into a complete execution plan. The platform orchestrates six specialized agents -- Idea Validation, Market Research, Pitch Deck Generation, MVP Planning, Legal Document Drafting, and an AI Chat Co-Founder -- backed by deterministic scoring formulas, structured LLM responses, real-time web research, and retrieval-augmented generation (RAG). The system is fully Dockerized, uses SQLite for lightweight persistence, GPT-4.1 for all language model operations, and supports asynchronous parallel API execution across its agent pipeline.
+StartBot is a production-grade, multi-agent AI system that transforms a raw startup idea into a complete execution plan. The platform orchestrates six specialized agents -- Idea Validation, Market Research, Pitch Deck Generation, MVP Planning, Legal Document Drafting, and an AI Chat Co-Founder -- backed by deterministic scoring formulas, structured LLM responses, real-time web research, and retrieval-augmented generation (RAG). The system is fully Dockerized, uses PostgreSQL for persistent storage, GPT-4.1 for all language model operations, and supports asynchronous parallel API execution across its agent pipeline.
 
 ---
 
@@ -80,7 +80,7 @@ A retrieval-augmented generation agent backed by ChromaDB. Every agent output (e
 |                  +----------------+                             |
 |                                                                |
 |  +------------------+    +----------------------------------+  |
-|  | SQLAlchemy ORM   |--->| SQLite (file: data/startbot.db)  |  |
+|  | SQLAlchemy ORM   |--->| PostgreSQL (Docker service)      |  |
 |  +------------------+    +----------------------------------+  |
 |                                                                |
 |  +------------------+    +----------------------------------+  |
@@ -104,7 +104,7 @@ External APIs:
 | ------------------- | ------------------------------------------------ |
 | Frontend            | Next.js 16, React 19, Tailwind CSS 4, TypeScript |
 | Backend             | FastAPI 0.115, Python 3.10, Uvicorn (ASGI)       |
-| Database            | SQLite (file-based persistence)                  |
+| Database            | PostgreSQL 16                                    |
 | ORM                 | SQLAlchemy 2.0                                   |
 | AI Model            | OpenAI GPT-4.1                                   |
 | Embeddings          | OpenAI text-embedding-3-large                    |
@@ -121,7 +121,7 @@ External APIs:
 
 ## Database Schema
 
-StartBot uses SQLite with SQLAlchemy ORM. All primary keys are UUID v4, stored as `CHAR(36)` via a custom `GUID` type decorator for cross-backend compatibility. The database file is persisted at `data/startbot.db` inside the backend container via a Docker volume.
+StartBot uses PostgreSQL with SQLAlchemy ORM. All primary keys are UUID v4, stored as `CHAR(36)` via a custom `GUID` type decorator for cross-backend compatibility. The database is managed by a dedicated PostgreSQL container with a persistent Docker volume.
 
 ### Tables
 
@@ -154,7 +154,7 @@ Agent outputs are chunked into semantic sections, embedded via `text-embedding-3
 ### Backend (`backend/.env.example`)
 
 ```
-DATABASE_URL=sqlite:///./data/startbot.db
+DATABASE_URL=postgresql://startbot:startbot@localhost:5432/startbot
 
 ENV=development
 HOST=0.0.0.0
@@ -246,17 +246,18 @@ docker compose up
 
 ### Service Architecture
 
-The `docker-compose.yml` defines two services:
+The `docker-compose.yml` defines three services:
 
-- **backend** -- FastAPI application served by Uvicorn. Reads API keys from `backend/.env` via `env_file`. Exposes port 8000. Mounts two Docker volumes for persistence. Includes a health check that polls `/health`.
+- **db** -- PostgreSQL 16 (Alpine) with a named volume for data persistence. Includes a `pg_isready` health check. Backend depends on this service being healthy before starting.
+- **backend** -- FastAPI application served by Uvicorn. Reads API keys from `backend/.env` via `env_file`. Connects to the PostgreSQL container via `DATABASE_URL`. Exposes port 8000. Includes a health check that polls `/health`.
 - **frontend** -- Next.js production build served by Node.js. Build-time arguments bake `NEXT_PUBLIC_API_URL` into the JavaScript bundle. Depends on the backend service health check. Exposes port 3000.
 
 ### Persistence
 
-| Volume         | Mount Point         | Purpose                              |
-| -------------- | ------------------- | ------------------------------------ |
-| `backend-data` | `/app/data`         | SQLite database file (`startbot.db`) |
-| `vector-store` | `/app/vector_store` | ChromaDB persistent embeddings       |
+| Volume          | Mount Point                | Purpose                        |
+| --------------- | -------------------------- | ------------------------------ |
+| `postgres-data` | `/var/lib/postgresql/data` | PostgreSQL database storage    |
+| `vector-store`  | `/app/vector_store`        | ChromaDB persistent embeddings |
 
 Data in both volumes survives container restarts and rebuilds. To reset all data:
 
@@ -267,7 +268,7 @@ docker compose up --build
 
 ### Networking
 
-Both services communicate over a shared Docker bridge network (`startbot-network`). The frontend calls the backend via the host-mapped port.
+All three services communicate over a shared Docker bridge network (`startbot-network`). The backend connects to PostgreSQL via the internal hostname `db`. The frontend calls the backend via the host-mapped port.
 
 ---
 
@@ -275,7 +276,7 @@ Both services communicate over a shared Docker bridge network (`startbot-network
 
 - **Frontend** can be deployed to Vercel. Set `NEXT_PUBLIC_API_URL` to the production backend URL during the build.
 - **Backend** can be deployed to Railway, Render, or any platform supporting Docker containers. Set all environment variables via the platform's secret management.
-- **SQLite** is suitable for single-node deployments and evaluation environments. For horizontal scaling or multi-instance deployments, migration to PostgreSQL is recommended.
+- **PostgreSQL** is used for all deployments. Managed PostgreSQL services (e.g., Railway Postgres, Supabase, Neon) are recommended for production. Set `DATABASE_URL` to the provider's connection string.
 - **ChromaDB** persistence directory should be backed by a persistent volume in cloud deployments.
 - **API keys** must never be committed to version control. Use platform-level environment variable injection.
 
@@ -410,13 +411,12 @@ The codebase demonstrates separation of concerns (routes, services, agents, mode
 
 ### Scalable Architecture Design
 
-While currently deployed with SQLite for simplicity, the architecture cleanly separates the database layer via SQLAlchemy ORM, the vector store via a service abstraction, and the LLM client via a centralized module. Each layer can be independently swapped or scaled without modifying agent logic.
+The architecture cleanly separates the database layer via SQLAlchemy ORM with PostgreSQL, the vector store via a service abstraction, and the LLM client via a centralized module. Each layer can be independently swapped or scaled without modifying agent logic.
 
 ---
 
 ## Future Improvements
 
-- Migration to PostgreSQL for multi-instance and concurrent-write support
 - Background task queue (Celery or ARQ) for long-running agent pipelines
 - Application performance monitoring and structured logging aggregation
 - Redis caching layer for repeated API queries and embedding results

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-from .database import Base, engine, DATABASE_URL
+from .database import Base, engine
 from .routes.auth import router as auth_router
 from .routes.ideas import router as ideas_router
 from .routes.evaluation import router as evaluation_router
@@ -24,29 +24,11 @@ from .routes.chat import router as chat_router
 load_dotenv()
 
 
-def _get_sqlite_path() -> str | None:
-    """Extract the file path from a sqlite:/// URL, or None if not SQLite."""
-    if DATABASE_URL.startswith("sqlite:///"):
-        return DATABASE_URL.replace("sqlite:///", "", 1)
-    return None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Dev-mode DB reset ────────────────────────────────────────
-    # Ensure data directory exists for SQLite
-    db_path = _get_sqlite_path()
-    if db_path:
-        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-
-    if os.getenv("ENV", "development") == "development":
-        print("⚠️  Running in DEVELOPMENT mode — DB reset enabled")
-        if db_path and os.path.exists(db_path):
-            os.remove(db_path)
-            print("🧹 [DB] Development DB reset")
-
+    # ── Ensure tables exist (PostgreSQL) ──────────────────────────
     Base.metadata.create_all(bind=engine)
-    print("✅ [DB] Tables ensured (fresh schema)")
+    print("✅ [DB] Tables ensured")
 
     # Log Google OAuth status at startup
     from .services.google_oauth_config import log_google_oauth_status

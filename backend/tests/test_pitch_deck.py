@@ -23,10 +23,13 @@ from app.main import app
 from app.services.auth_utils import create_access_token, hash_password
 
 # ---------------------------------------------------------------------------
-# Test database setup
+# Test database setup (PostgreSQL)
 # ---------------------------------------------------------------------------
-TEST_DATABASE_URL = "sqlite:///./test_pitch_deck.db"
-engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql://startbot:startbot@localhost:5432/startbot_test",
+)
+engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 _user_counter = 0

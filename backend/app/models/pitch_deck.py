@@ -17,7 +17,7 @@ class PitchDeck(Base):
     title = Column(String(512), nullable=False, default="Pitch Deck")
     status = Column(String(32), nullable=False, default="pending")  # pending | completed | failed
     provider = Column(String(32), nullable=False, default="alai")
-    deck_json = Column(Text, nullable=True)  # JSON string (compatible with SQLite & PG)
+    deck_json = Column(Text, nullable=True)  # JSON string
     generation_id = Column(String(256), nullable=True)  # Alai generation ID
     view_url = Column(String(1024), nullable=True)  # Shareable presentation link
     pdf_url = Column(String(1024), nullable=True)  # PDF export link

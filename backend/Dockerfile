@@ -3,7 +3,7 @@
 # =============================================================================
 # Base:    python:3.10-slim
 # Server:  uvicorn (ASGI)
-# DB:      SQLite via mounted volume at /app/data
+# DB:      PostgreSQL (external service)
 # =============================================================================
 
 FROM python:3.10-slim AS base
@@ -13,8 +13,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Install system dependencies required by some Python packages
+# libpq-dev is required for psycopg2 (PostgreSQL driver)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libffi-dev && \
+    apt-get install -y --no-install-recommends gcc libffi-dev libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -31,8 +32,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application source
 COPY . .
 
-# Create data directories for persistence (mounted as volumes)
-RUN mkdir -p /app/data /app/vector_store && chown -R appuser:appuser /app
+# Create vector store directory for ChromaDB persistence (mounted as volume)
+RUN mkdir -p /app/vector_store && chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
