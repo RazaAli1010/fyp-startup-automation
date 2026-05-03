@@ -92,9 +92,6 @@ app.include_router(mvp_router)
 app.include_router(legal_router)
 app.include_router(chat_router)
 
-@app.get("/__cors_test")
-def cors_test():
-    return {"cors": "ok"}
 @app.get(
     "/",
     summary="API Root",

@@ -119,20 +119,21 @@ def _create_idea(token, idea_data=None):
     return res.json()["idea_id"]
 
 
-# Mock the external API calls so tests don't hit Reddit/Trend/Competitor APIs
+# Mock the external API calls so tests don't hit Tavily/SerpAPI/Exa APIs
 def _mock_evaluation_signals():
     """Return a context manager that patches all external signal fetchers."""
-    from app.schemas.reddit_schema import RedditPainSignals
+    from app.schemas.problem_intensity_schema import ProblemIntensitySignals
     from app.schemas.trend_schema import TrendDemandSignals
     from app.schemas.competitor_schema import CompetitorSignals
 
-    reddit = RedditPainSignals(
-        total_posts_analyzed=10,
-        complaint_post_count=5,
-        avg_upvotes=15.0,
-        avg_comments=8.0,
-        pain_intensity_score=0.55,
-        top_pain_keywords=["slow", "expensive", "buggy"],
+    problem = ProblemIntensitySignals(
+        problem_intensity_score=55.0,
+        confidence="MEDIUM",
+        explanation="Mocked for test",
+        search_intent_score=60.0,
+        evidence_strength_score=55.0,
+        complaint_score=50.0,
+        manual_cost_score=45.0,
     )
     trend = TrendDemandSignals(
         avg_search_volume=65.0,
@@ -152,7 +153,7 @@ def _mock_evaluation_signals():
     )
 
     return (
-        patch("app.routes.pitch_deck.fetch_reddit_pain_signals", return_value=reddit),
+        patch("app.routes.pitch_deck.fetch_problem_intensity_signals", return_value=problem),
         patch("app.routes.pitch_deck.fetch_trend_demand_signals", return_value=trend),
         patch("app.routes.pitch_deck.fetch_competitor_signals", return_value=competitor),
     )

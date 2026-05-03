@@ -4,8 +4,6 @@ StartBot is a multi-agent AI system that transforms a raw startup idea into a co
 
 The system is fully Dockerised (PostgreSQL 16 + FastAPI + Next.js 16), uses GPT-4.1 for all LLM operations, and executes all external API calls asynchronously in parallel via `asyncio.gather`. Scoring is **100 % deterministic** — no LLM is involved in computing the final viability score.
 
-> **Transparency note — Reddit / PRAW.** The previous README listed Reddit (PRAW) as a data source for the Idea Validation Agent. **This is incorrect.** The files `reddit_agent.py` and `reddit_schema.py` exist in the repository but are **dead code** — they are never imported by any active route or service. The Problem Intensity module uses **Tavily + SerpAPI only**. PRAW remains in `requirements.txt` as a vestigial dependency. This README documents the system as it actually runs.
-
 ---
 
 ## Table of Contents
@@ -153,9 +151,7 @@ graph LR
 | Containerisation | Docker, Docker Compose                                     |
 | Data Validation  | Pydantic 2.10                                              |
 
-> **Note on LangGraph:** The file `idea_validation/graph.py` defines a `StateGraph` with nodes `search_reddit`, `search_trends`, `search_competitors`, and `judge_logic`. However, **all three search nodes are deprecated stubs** that return no-op values. The actual evaluation pipeline runs directly from the route handler (`routes/evaluation.py`) by calling service-layer agents in parallel via `asyncio.gather`. The LangGraph graph is retained as legacy code.
->
-> **Note on Reddit / PRAW:** `reddit_agent.py` and `reddit_schema.py` exist in the repository and `praw` is in `requirements.txt`, but **no active route or service imports them**. The Problem Intensity module uses Tavily + SerpAPI exclusively.
+> **Note:** The evaluation pipeline runs directly from the route handler (`routes/evaluation.py`) by calling service-layer agents in parallel via `asyncio.gather`. There is no LangGraph orchestration — all legacy LangGraph code, Reddit/PRAW code, and funding agent code have been removed from the codebase.
 
 ---
 
@@ -257,7 +253,7 @@ graph LR
 
 ### 5.1 Problem Intensity Agent
 
-**File:** `services/problem_intensity_agent.py` — **APIs: Tavily + SerpAPI only. No Reddit, no Exa, no LLM.**
+**File:** `services/problem_intensity_agent.py` — **APIs: Tavily + SerpAPI only. No LLM.**
 
 #### Signal Collection
 
@@ -854,7 +850,6 @@ graph TD
 
 - **No background task queue** — all agent pipelines run synchronously within the HTTP request lifecycle. Long-running evaluations block the response.
 - **No Alembic migrations** — schema changes require `Base.metadata.create_all()` or manual DB recreation.
-- **Reddit/PRAW dead code** — `reddit_agent.py`, `reddit_schema.py`, and `praw` dependency remain in the repo but are unused.
 - **No rate limiting** — API endpoints have no per-user throttling.
 - **Single-region ChromaDB** — vector store is local; no distributed vector DB.
 - **Google Trends ≠ real CAGR** — the `market_growth` signal is a proxy derived from search interest, not actual revenue data. Hard-capped at 80 to prevent overestimation.
@@ -868,7 +863,6 @@ graph TD
 - Rate limiting and usage quotas
 - Webhook notifications for completed agent runs
 - PDF/DOCX export for all reports
-- Remove dead Reddit/PRAW code and dependency
 
 ---
 
